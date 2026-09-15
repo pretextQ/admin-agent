@@ -351,6 +351,7 @@ docker-compose exec api alembic upgrade head
 | [API 文档](docs/api/api-spec.md) | 接口规范 |
 | [设计计划](docs/guides/设计计划与里程碑.md) | 项目规划 |
 | [开发规范](docs/guides/开发规范.md) | 代码规范 |
+| [代码风格指南](docs/guides/代码风格指南.md) | 详细代码风格 |
 | [测试计划](docs/guides/测试计划.md) | 测试策略 |
 
 ---
