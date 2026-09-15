@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+# Copyright 2026  Admin AI Team, All rights reserved.
+#
+# 以 pyproject.toml 为唯一真相源，本文件由 uv pip compile 生成，请勿手工编辑：
+#   uv pip compile pyproject.toml -o requirements.txt
+
 # Web Framework
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0

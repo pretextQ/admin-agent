@@ -1,39 +1,46 @@
 # Admin AI Agent
 
-> 企业行政智能系统 - AI 行政数字员工
+> 企业行政智能系统 · AI 行政数字员工
 >
-> "员工动嘴，系统办事"
+> **"员工动嘴，系统办事"**
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-orange.svg)](CHANGELOG.md)
 
 ---
 
 ## 项目简介
 
-Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。员工通过自然语言提出行政诉求，智能体理解意图并自动完成事务办理，支持多轮对话澄清与全流程状态跟踪。
+Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。员工通过自然语言提出行政诉求，智能体理解意图并自动或半自动完成事务办理，支持多轮对话澄清与全流程状态跟踪。
 
 **核心能力：**
 
-- 🤖 自然语言理解：识别 11 类行政意图
-- 🔄 多轮对话：信息不全时智能反问
-- 🔧 工具调用：对接 OA、审批、物资等系统
-- 📚 知识检索：RAG 检索制度文档
-- 🔐 分级授权：低/中/高风险场景不同处理
-- 📋 全流程审计：操作留痕可追溯
+- 🤖 自然语言理解：识别 **11 类行政业务场景**（对应 13 类意图标签，含 greeting/other）
+- 🔄 多轮对话：信息不全时逐个反问，不猜测
+- 🔧 工具调用：对接 OA、审批流、物资、日程等存量系统
+- 📚 知识检索：RAG 检索制度文档并附引用来源
+- 🔐 分级授权：低 / 中 / 高风险场景采用不同处理策略
+- 📋 全流程审计：操作留痕、可追溯
 
 **支持场景：**
 
-| 场景 | 自动化程度 | 说明 |
-|------|-----------|------|
-| 制度问答 | ✅ 全自动 | "年假有几天""报销标准是什么" |
-| 会议室预定 | ✅ 全自动 | "明天下午订个10人会议室" |
-| 请假申请 | ✅ 全自动 | 校验余额/冲突，发起审批 |
-| 物资领用 | ✅ 全自动 | 检查库存/限额，自动扣减 |
-| 报销申请 | ⚠️ 半自动 | 草拟+校验，人工确认后提交 |
-| 差旅申请 | ⚠️ 半自动 | 生成行程+按标准预订 |
-| 用印/盖章 | ⚠️ 半自动 | 校验+发起审批，人工确认 |
+| 场景 | 频次 | 复杂度 | 自动化程度 |
+|------|------|--------|-----------|
+| 制度问答 | 高 | 简单 | ✅ 全自动（RAG） |
+| 会议室 / 车辆预定 | 高 | 简单 | ✅ 全自动 |
+| 综合查询（进度/余额） | 高 | 简单 | ✅ 全自动 |
+| 物资领用 | 高 | 中 | ✅ 自动（校验库存/限额） |
+| 请假申请 | 高 | 中 | ✅ 自动（校验余额/冲突） |
+| 证明开具 | 中 | 中 | ✅ 自动（生成 + 推送盖章） |
+| 报销申请 | 中 | 复杂 | ⚠️ 半自动（草拟 + 人工确认） |
+| 差旅申请 / 订票 | 中 | 复杂 | ⚠️ 半自动 |
+| 固定资产领用 / 归还 | 中 | 中 | ⚠️ 半自动 |
+| 用印 / 盖章 / 合同 | 低 | 复杂 | ⚠️ 半自动（人工确认） |
+| 入离职办理 | 低 | 复杂 | ⚠️ 半自动（分步引导） |
+
+> 风险分级与人工确认策略见 [需求文档](docs/行政智能系统需求文档.md) §4.3。
 
 ---
 
@@ -41,143 +48,78 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 | 层级 | 技术选型 | 说明 |
 |------|----------|------|
-| 包管理 | uv | 快速 Python 包管理 |
-| 后端框架 | FastAPI | 异步高性能，自动文档 |
-| 数据库 | PostgreSQL | 主数据存储 |
-| 缓存 | Redis | 会话管理、限流 |
-| 向量库 | ChromaDB | RAG 知识检索 |
-| LLM | OpenAI API | 意图识别、对话生成 |
-| 任务队列 | Celery | 异步任务处理 |
+| 语言 / 包管理 | Python 3.11+ / uv | 虚拟环境与依赖管理 |
+| 后端框架 | FastAPI + Pydantic v2 | 异步高性能，自动生成 OpenAPI |
+| 数据库 | PostgreSQL 15+ / SQLAlchemy 2.0 (async) | 主数据存储 |
+| 缓存 / 会话 | Redis 7+ | 会话状态、限流 |
+| 向量库 | ChromaDB + sentence-transformers | RAG 知识检索 |
+| LLM | OpenAI 兼容 API | 意图识别、对话生成 |
+| 任务队列 | Celery + Redis | 异步任务（通知、批量入库） |
+| 迁移 | Alembic | 数据库版本管理 |
+| 可观测性 | structlog + Prometheus | 结构化日志与指标 |
+| 代码质量 | Ruff + mypy + pytest + pre-commit | 格式、类型、测试 |
 | 部署 | Docker + Nginx | 容器化部署 |
 
 ---
 
 ## 项目结构
 
-```
+> 标记说明：✅ 已交付；⬜ 规划中（本仓库当前仅包含文档，代码骨架尚未提交）。
+
+```text
 admin-ai-agent/
-├── README.md                           # 项目说明
-├── LICENSE                             # 开源协议
-├── CHANGELOG.md                        # 版本历史
-├── CONTRIBUTING.md                     # 贡献指南
-├── .gitignore                          # Git 忽略配置
-├── .env.example                        # 环境变量示例
-├── requirements.txt                    # Python 依赖
-├── pyproject.toml                      # 项目配置
-├── docker-compose.yml                  # Docker 编排
-├── Dockerfile                          # Docker 镜像
-├── alembic.ini                         # 数据库迁移配置
+├── app/                                    ✅ 包根
+│   ├── __init__.py                         ✅
+│   └── admin_ai/                           ✅ 主包
+│       ├── __init__.py                     ✅
+│       ├── main.py                         ⬜ FastAPI 入口
+│       ├── config.py                       ⬜ Settings / get_config()
+│       ├── api/                            ⬜ 路由层
+│       │   ├── routes.py                   ⬜ 路由汇总
+│       │   ├── deps_context.py             ⬜ 依赖注入上下文
+│       │   ├── response.py                 ⬜ 统一响应信封与异常处理器
+│       │   ├── schemas.py                  ⬜ API Schema
+│       │   ├── chat.py                     ⬜ 对话接口
+│       │   ├── task.py                     ⬜ 任务/待办接口
+│       │   ├── knowledge.py                ⬜ 知识库接口
+│       │   ├── admin.py                    ⬜ 管理后台接口
+│       │   └── websocket.py                ⬜ WebSocket 对话
+│       ├── core/                           ⬜ 业务核心
+│       │   ├── agent/                      ⬜ orchestrator / intent / slot / dialog / prompt
+│       │   ├── rag/                        ⬜ retriever / embedder / splitter / reranker
+│       │   ├── tools/                      ⬜ base / registry / gateway / *_tool
+│       │   ├── rules/                      ⬜ engine / validators / policies
+│       │   └── auth/                       ⬜ sso / rbac / deps
+│       ├── db/                             ⬜ 数据库
+│       │   ├── database.py                 ⬜ Base / engine / session
+│       │   ├── models.py                   ⬜ SQLAlchemy 模型
+│       │   ├── schemas.py                  ⬜ 持久层 Schema
+│       │   └── orm/                        ⬜ 按实体拆分
+│       ├── services/                       ⬜ 服务层
+│       ├── middleware/                     ⬜ audit / rate_limit / logging
+│       └── utils/                          ⬜ logger / exceptions / helpers
 │
-├── app/                                # 应用代码
-│   ├── __init__.py
-│   ├── main.py                         # FastAPI 入口
-│   ├── config.py                       # 配置管理
-│   ├── dependencies.py                 # 依赖注入
-│   │
-│   ├── api/                            # API 路由层
-│   │   ├── __init__.py
-│   │   ├── v1/
-│   │   │   ├── __init__.py
-│   │   │   ├── router.py              # v1 路由汇总
-│   │   │   ├── chat.py                # 对话接口
-│   │   │   ├── task.py                # 任务接口
-│   │   │   ├── knowledge.py           # 知识库接口
-│   │   │   └── admin.py               # 管理后台接口
-│   │   └── websocket/
-│   │       └── chat_ws.py             # WebSocket 对话
-│   │
-│   ├── core/                           # 核心业务逻辑
-│   │   ├── __init__.py
-│   │   ├── agent/                      # 智能体模块
-│   │   │   ├── __init__.py
-│   │   │   ├── orchestrator.py        # 智能体编排器
-│   │   │   ├── intent.py              # 意图识别
-│   │   │   ├── slot.py                # 槽位抽取
-│   │   │   ├── dialog.py              # 多轮对话管理
-│   │   │   └── prompt.py              # Prompt 模板
-│   │   │
-│   │   ├── rag/                        # RAG 知识检索
-│   │   │   ├── __init__.py
-│   │   │   ├── retriever.py           # 检索器
-│   │   │   ├── embedder.py            # 向量化
-│   │   │   └── splitter.py            # 文档切片
-│   │   │
-│   │   ├── tools/                      # 工具调用层
-│   │   │   ├── __init__.py
-│   │   │   ├── registry.py            # 工具注册中心
-│   │   │   ├── gateway.py             # 统一网关
-│   │   │   ├── base.py                # 工具基类
-│   │   │   ├── oa_tool.py             # OA 工具
-│   │   │   ├── approval_tool.py       # 审批流工具
-│   │   │   ├── material_tool.py       # 物资工具
-│   │   │   └── calendar_tool.py       # 日程工具
-│   │   │
-│   │   ├── rules/                      # 规则引擎
-│   │   │   ├── __init__.py
-│   │   │   ├── engine.py              # 规则引擎
-│   │   │   └── validators.py          # 校验器
-│   │   │
-│   │   └── auth/                       # 认证鉴权
-│   │       ├── __init__.py
-│   │       ├── sso.py                 # SSO 集成
-│   │       └── rbac.py                # 权限控制
-│   │
-│   ├── models/                         # 数据模型
-│   │   ├── __init__.py
-│   │   ├── user.py                    # 用户模型
-│   │   ├── conversation.py            # 会话模型
-│   │   ├── message.py                 # 消息模型
-│   │   ├── task.py                    # 任务模型
-│   │   └── audit.py                   # 审计模型
-│   │
-│   ├── schemas/                        # Pydantic Schema
-│   │   ├── __init__.py
-│   │   ├── chat.py
-│   │   ├── task.py
-│   │   └── common.py
-│   │
-│   ├── services/                       # 服务层
-│   │   ├── __init__.py
-│   │   ├── chat_service.py            # 对话服务
-│   │   ├── task_service.py            # 任务服务
-│   │   └── knowledge_service.py       # 知识库服务
-│   │
-│   ├── db/                             # 数据库
-│   │   ├── __init__.py
-│   │   ├── session.py                 # 数据库会话
-│   │   ├── redis.py                   # Redis 连接
-│   │   └── migrations/                # Alembic 迁移
-│   │
-│   ├── middleware/                      # 中间件
-│   │   ├── __init__.py
-│   │   ├── audit.py                   # 审计中间件
-│   │   └── rate_limit.py              # 限流中间件
-│   │
-│   └── utils/                          # 工具函数
-│       ├── __init__.py
-│       ├── logger.py
-│       └── exceptions.py
+├── migrations/                             ⬜ Alembic 迁移
+│   ├── env.py                              ⬜
+│   └── versions/                           ⬜
 │
-├── tests/                              # 测试代码
-│   ├── conftest.py                    # 测试配置
-│   ├── test_api/                      # API 测试
-│   ├── test_core/                     # 单元测试
-│   └── test_services/                 # 集成测试
+├── tests/                                  ⬜
+│   ├── conftest.py                         ⬜ 共享 fixture 与 marker
+│   └── admin_ai/                           ⬜ 与主包同构
+│       ├── test_api/                       ⬜
+│       ├── test_core/                      ⬜
+│       └── test_services/                  ⬜
 │
-├── scripts/                            # 脚本工具
-│   ├── init_db.py                     # 数据库初始化
-│   └── seed_data.py                   # 测试数据
-│
-└── docs/                               # 项目文档
-    ├── 行政智能系统需求文档.md
-    ├── architecture/
-    │   └── 行政智能系统-技术方案设计.md
-    ├── api/
-    │   └── api-spec.md
-    └── guides/
-        ├── 设计计划与里程碑.md
-        ├── 开发规范.md
-        └── 测试计划.md
+├── scripts/                                ⬜ 初始化 / 种子数据脚本
+├── docs/                                   ✅ 项目文档
+├── alembic.ini                             ⬜
+├── pyproject.toml                          ✅
+├── requirements.txt                        ✅
+├── requirements-dev.txt                    ✅
+├── .env.example                            ✅
+├── CHANGELOG.md                            ✅
+├── CONTRIBUTING.md                         ✅
+└── README.md                               ✅
 ```
 
 ---
@@ -187,11 +129,10 @@ admin-ai-agent/
 | 环境 | 版本要求 | 说明 |
 |------|----------|------|
 | Python | 3.11+ | 推荐 3.12 |
-| uv | 最新版 | Python 包管理工具 |
+| uv | 最新版 | Python 包管理工具（可回退到 pip） |
 | PostgreSQL | 15+ | 主数据库 |
-| Redis | 7+ | 缓存/会话 |
-| Docker | 24+ | 容器化部署 |
-| Node.js | 18+ | 前端开发（可选） |
+| Redis | 7+ | 缓存 / 会话 |
+| Docker | 24+ | 容器化部署（可选） |
 
 ---
 
@@ -207,53 +148,41 @@ cd admin-ai-agent
 ### 2. 环境配置
 
 ```bash
-# 复制环境变量模板
 cp .env.example .env
-
-# 编辑 .env 文件，填入配置
-# 必须配置：
-# - DATABASE_URL: PostgreSQL 连接
-# - REDIS_URL: Redis 连接
-# - OPENAI_API_KEY: OpenAI API Key
+# 编辑 .env，至少填写：
+#   DATABASE_URL   PostgreSQL 连接
+#   REDIS_URL      Redis 连接
+#   OPENAI_API_KEY LLM API Key
 ```
 
-### 3. Docker 启动（推荐）
+### 3. 本地开发
 
 ```bash
-# 启动所有服务
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f api
-```
-
-### 4. 本地开发
-
-```bash
-# 安装 uv（如果没有）
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# 或
+# 安装 uv（如未安装）
 pip install uv
 
-# 创建虚拟环境
+# 创建并激活虚拟环境
 uv venv
-
-# 激活环境
-source .venv/bin/activate  # Linux/Mac
-# 或
-.venv\Scripts\activate  # Windows
+source .venv/bin/activate        # Linux / macOS
+.venv\Scripts\activate          # Windows
 
 # 安装依赖
-uv pip install -r requirements.txt
-
-# 安装开发依赖（可选）
 uv pip install -r requirements-dev.txt
 
-# 初始化数据库
+# 执行数据库迁移
 alembic upgrade head
 
 # 启动开发服务器
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.admin_ai.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 4. Docker 启动
+
+> 部署所需文件见 [部署与运维](docs/guides/部署与运维.md)。
+
+```bash
+docker compose up -d
+docker compose logs -f api
 ```
 
 ### 5. 访问服务
@@ -261,25 +190,21 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | 服务 | 地址 |
 |------|------|
 | API 服务 | http://localhost:8000 |
+| 健康检查 | http://localhost:8000/api/health |
 | Swagger 文档 | http://localhost:8000/docs |
 | ReDoc 文档 | http://localhost:8000/redoc |
-| Flower (Celery) | http://localhost:5555 |
+| 指标 | http://localhost:8000/metrics |
 
 ---
 
 ## 开发指南
 
-### 代码规范
+### 代码检查与格式化
 
 ```bash
-# 代码格式化
-black app/ tests/
-
-# 导入排序
-isort app/ tests/
-
-# 代码检查
-flake8 app/ tests/
+# 格式化 + Lint（Ruff 覆盖 black/isort/flake8）
+ruff format app/ tests/
+ruff check --fix app/ tests/
 
 # 类型检查
 mypy app/
@@ -288,26 +213,29 @@ mypy app/
 ### 测试
 
 ```bash
-# 运行所有测试
-pytest
+# 全部测试
+pytest tests/admin_ai -q
 
-# 运行带覆盖率
-pytest --cov=app --cov-report=html
+# 带覆盖率（整体门槛 80%）
+pytest --cov=app.admin_ai --cov-report=term-missing --cov-fail-under=80
 
-# 运行特定测试
-pytest tests/test_core/test_intent.py
+# 运行指定测试
+pytest tests/admin_ai/test_core/test_intent.py -v
+
+# 跳过慢测试
+pytest -m "not slow"
 ```
 
 ### 数据库迁移
 
 ```bash
-# 创建迁移
+# 生成迁移
 alembic revision --autogenerate -m "描述"
 
 # 执行迁移
 alembic upgrade head
 
-# 回滚迁移
+# 回滚
 alembic downgrade -1
 ```
 
@@ -315,30 +243,24 @@ alembic downgrade -1
 
 ## 部署
 
-### 生产环境部署
-
-```bash
-# 构建镜像
-docker build -t admin-ai-agent .
-
-# 启动生产环境
-docker-compose -f docker-compose.prod.yml up -d
-
-# 数据库迁移
-docker-compose exec api alembic upgrade head
-```
+生产部署、灰度与回滚、备份恢复、监控告警的完整说明见 [部署与运维](docs/guides/部署与运维.md)。
 
 ### 环境变量说明
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| DATABASE_URL | PostgreSQL 连接 | - |
-| REDIS_URL | Redis 连接 | redis://localhost:6379/0 |
-| OPENAI_API_KEY | OpenAI API Key | - |
-| OPENAI_BASE_URL | OpenAI API 地址 | https://api.openai.com/v1 |
-| LLM_MODEL | 模型名称 | gpt-4o-mini |
-| SECRET_KEY | JWT 密钥 | - |
-| DEBUG | 调试模式 | false |
+| `APP_VERSION` | 应用版本 | `0.1.0` |
+| `DEBUG` | 调试模式（生产必须 false） | `false` |
+| `DATABASE_URL` | PostgreSQL 连接串 | - |
+| `REDIS_URL` | Redis 连接串 | `redis://localhost:6379/0` |
+| `OPENAI_API_KEY` | LLM API Key | - |
+| `OPENAI_BASE_URL` | LLM API 地址 | `https://api.openai.com/v1` |
+| `LLM_MODEL` | 模型名称 | `gpt-4o-mini` |
+| `CHROMA_HOST` / `CHROMA_PORT` | 向量库地址 | `localhost` / `8005` |
+| `SECRET_KEY` | JWT 密钥（生产必须修改） | - |
+| `CORS_ORIGINS` | 允许的跨域来源 | `[]`（生产禁止 `["*"]`） |
+
+完整清单见 [.env.example](.env.example)。
 
 ---
 
@@ -346,13 +268,17 @@ docker-compose exec api alembic upgrade head
 
 | 文档 | 说明 |
 |------|------|
-| [需求文档](docs/行政智能系统需求文档.md) | 产品需求文档 (PRD) |
+| [需求文档](docs/行政智能系统需求文档.md) | 产品需求文档（PRD） |
 | [技术方案](docs/architecture/行政智能系统-技术方案设计.md) | 技术架构设计 |
 | [API 文档](docs/api/api-spec.md) | 接口规范 |
-| [设计计划](docs/guides/设计计划与里程碑.md) | 项目规划 |
-| [开发规范](docs/guides/开发规范.md) | 代码规范 |
-| [代码风格指南](docs/guides/代码风格指南.md) | 详细代码风格 |
+| [设计计划与里程碑](docs/guides/设计计划与里程碑.md) | 项目规划 |
+| [开发规范](docs/guides/开发规范.md) | 工程流程与约束 |
+| [代码风格指南](docs/guides/代码风格指南.md) | 代码风格细则 |
 | [测试计划](docs/guides/测试计划.md) | 测试策略 |
+| [部署与运维](docs/guides/部署与运维.md) | 部署、监控、运维 |
+| [安全策略](SECURITY.md) | 安全与漏洞报告 |
+| [贡献指南](CONTRIBUTING.md) | 参与方式 |
+| [更新日志](CHANGELOG.md) | 版本历史 |
 
 ---
 
@@ -360,6 +286,8 @@ docker-compose exec api alembic upgrade head
 
 - [x] 需求文档
 - [x] 技术方案设计
+- [x] API 接口文档
+- [x] 工程规范与测试计划
 - [x] 项目文档结构
 - [ ] 项目骨架代码
 - [ ] 核心模块开发
@@ -370,13 +298,13 @@ docker-compose exec api alembic upgrade head
 
 ## 贡献指南
 
-请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解贡献流程。
+请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解分支、提交与 PR 流程。
 
 ---
 
 ## 版本历史
 
-请阅读 [CHANGELOG.md](CHANGELOG.md) 了解版本更新历史。
+当前版本 **0.1.0**（文档阶段）。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -388,6 +316,5 @@ docker-compose exec api alembic upgrade head
 
 ## 联系方式
 
-- 项目负责人：[待填写]
-- 技术负责人：[待填写]
-- 问题反馈：[Issues](https://gitee.com/qiulongfei4408/admin-ai-agent/issues)
+- 问题反馈：[Gitee Issues](https://gitee.com/qiulongfei4408/admin-ai-agent/issues)
+- 安全漏洞：见 [SECURITY.md](SECURITY.md)

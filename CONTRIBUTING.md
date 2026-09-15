@@ -2,6 +2,10 @@
 
 感谢你对 Admin AI Agent 项目的关注！本文档将指导你如何参与项目贡献。
 
+> 仓库托管在 [Gitee](https://gitee.com/qiulongfei4408/admin-ai-agent)。
+> 代码风格与开发约定分别见 [代码风格指南](docs/guides/代码风格指南.md) 与
+> [开发规范](docs/guides/开发规范.md)。
+
 ---
 
 ## 目录
@@ -50,6 +54,8 @@
 
 ## 开发流程
 
+本项目使用 [uv](https://github.com/astral-sh/uv) 管理 Python 环境与依赖。
+
 ### 1. Fork 项目
 
 ```bash
@@ -74,23 +80,55 @@ git merge upstream/main
 git checkout -b feature/你的功能名称
 ```
 
-### 3. 开发与测试
+### 3. 准备环境（uv）
 
 ```bash
-# 安装依赖
-pip install -r requirements.txt
+# 安装 uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# 或
+pip install uv
 
-# 开发代码...
+# 创建并激活虚拟环境
+uv venv
+source .venv/bin/activate  # Linux/macOS
+# 或
+.venv\Scripts\activate  # Windows
 
-# 运行测试
-pytest
-
-# 代码检查
-flake8 app/
-mypy app/
+# 安装依赖（含开发依赖）
+uv pip install -r requirements-dev.txt
 ```
 
-### 4. 提交代码
+> **pip 替代方案（不推荐）**：`python -m venv .venv && pip install -r requirements-dev.txt`。
+>
+> 注意：`pyproject.toml` 是依赖的唯一真相源，`requirements*.txt` 由 `uv pip compile` 派生，
+> 请勿手工编辑；新增依赖请修改 `pyproject.toml` 后重新生成。
+
+### 4. 开发与自测
+
+```bash
+# 代码检查（ruff 同时承担 lint 与格式化）
+ruff check app/ tests/
+ruff format --check app/ tests/
+
+# 自动修复 / 格式化
+ruff check --fix app/ tests/
+ruff format app/ tests/
+
+# 类型检查
+mypy app/
+
+# 单元测试
+pytest
+
+# 覆盖率（整体 ≥80%，CI 使用 --cov-fail-under=80）
+pytest --cov=app --cov-report=term-missing
+
+# 集成测试 / 端到端测试
+pytest -m integration
+pytest -m e2e
+```
+
+### 5. 提交代码
 
 ```bash
 git add .
@@ -98,7 +136,7 @@ git commit -m "feat: 添加xxx功能"
 git push origin feature/你的功能名称
 ```
 
-### 5. 创建 Pull Request
+### 6. 创建 Pull Request
 
 在 Gitee 上创建 PR，填写说明信息。
 
@@ -109,19 +147,16 @@ git push origin feature/你的功能名称
 ### Python 代码风格
 
 - 遵循 PEP 8 规范
-- 使用 Black 格式化代码
-- 使用 isort 排序导入
-- 使用类型注解
+- 使用 ruff 进行代码检查与格式化（替代 black / isort / flake8）
+- 使用类型注解，并通过 mypy 校验
+- 详细约定见 [代码风格指南](docs/guides/代码风格指南.md) 与 [开发规范](docs/guides/开发规范.md)
 
 ```bash
-# 格式化
-black app/ tests/
-
-# 导入排序
-isort app/ tests/
-
 # 代码检查
-flake8 app/ tests/
+ruff check app/ tests/
+
+# 代码格式化
+ruff format app/ tests/
 
 # 类型检查
 mypy app/
@@ -145,6 +180,8 @@ mypy app/
 ---
 
 ## 提交规范
+
+本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 规范。
 
 ### Commit 消息格式
 
@@ -183,6 +220,8 @@ git commit -m "fix(intent): 修复意图识别置信度计算错误
 
 Closes #123"
 ```
+
+提交正文使用中文，跨文档引用使用相对路径。
 
 ---
 
@@ -235,6 +274,9 @@ Closes #123
 
 ## 问题反馈
 
+所有问题与建议统一通过 Gitee Issues 提交：
+[https://gitee.com/qiulongfei4408/admin-ai-agent/issues](https://gitee.com/qiulongfei4408/admin-ai-agent/issues)。
+
 ### Bug 报告模板
 
 ```markdown
@@ -255,7 +297,7 @@ Closes #123
 ## 环境信息
 - OS: [e.g., Windows 11]
 - Python: [e.g., 3.11.5]
-- 项目版本: [e.g., v1.0.0]
+- 项目版本: [e.g., v0.1.0]
 
 ## 日志/截图
 [相关日志或截图]
@@ -281,8 +323,7 @@ Closes #123
 
 ## 联系方式
 
-- 问题反馈：[Issues](https://gitee.com/qiulongfei4408/admin-ai-agent/issues)
-- 邮箱：[待填写]
+- 问题反馈：[Gitee Issues](https://gitee.com/qiulongfei4408/admin-ai-agent/issues)
 
 ---
 
