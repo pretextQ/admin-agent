@@ -41,6 +41,7 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 | 层级 | 技术选型 | 说明 |
 |------|----------|------|
+| 包管理 | uv | 快速 Python 包管理 |
 | 后端框架 | FastAPI | 异步高性能，自动文档 |
 | 数据库 | PostgreSQL | 主数据存储 |
 | 缓存 | Redis | 会话管理、限流 |
@@ -183,13 +184,14 @@ admin-ai-agent/
 
 ## 环境要求
 
-| 环境 | 版本要求 |
-|------|----------|
-| Python | 3.11+ |
-| PostgreSQL | 15+ |
-| Redis | 7+ |
-| Docker | 24+ |
-| Node.js | 18+ (前端开发) |
+| 环境 | 版本要求 | 说明 |
+|------|----------|------|
+| Python | 3.11+ | 推荐 3.12 |
+| uv | 最新版 | Python 包管理工具 |
+| PostgreSQL | 15+ | 主数据库 |
+| Redis | 7+ | 缓存/会话 |
+| Docker | 24+ | 容器化部署 |
+| Node.js | 18+ | 前端开发（可选） |
 
 ---
 
@@ -228,14 +230,24 @@ docker-compose logs -f api
 ### 4. 本地开发
 
 ```bash
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
+# 安装 uv（如果没有）
+curl -LsSf https://astral.sh/uv/install.sh | sh
 # 或
-venv\Scripts\activate  # Windows
+pip install uv
+
+# 创建虚拟环境
+uv venv
+
+# 激活环境
+source .venv/bin/activate  # Linux/Mac
+# 或
+.venv\Scripts\activate  # Windows
 
 # 安装依赖
-pip install -r requirements.txt
+uv pip install -r requirements.txt
+
+# 安装开发依赖（可选）
+uv pip install -r requirements-dev.txt
 
 # 初始化数据库
 alembic upgrade head

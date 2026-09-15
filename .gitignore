@@ -16,6 +16,9 @@ build/
 .idea/
 *.swp
 *.swo
+.claude/
+.qoder/
+.codebuddy/
 
 # 环境变量
 .env
@@ -24,6 +27,7 @@ build/
 # 数据库
 *.db
 *.sqlite
+data/
 
 # 日志
 logs/
@@ -36,7 +40,11 @@ docker-compose.override.yml
 .coverage
 htmlcov/
 .pytest_cache/
+test-results/
 
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 临时文件
+*.json.bak
