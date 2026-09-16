@@ -82,8 +82,6 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 ## 项目结构
 
-> 标记说明：✅ 已交付；⬜ 规划中。
-
 ```text
 admin-ai-agent/
 ├── app/                                    ✅ 包根
