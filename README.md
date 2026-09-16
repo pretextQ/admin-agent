@@ -85,9 +85,9 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 ```text
 admin-ai-agent/
 ├── app/                                    包根
-│   ├── __init__.py                         ✅
+│   ├── __init__.py                         
 │   └── admin_ai/                           主包
-│       ├── __init__.py                     ✅
+│       ├── __init__.py                     
 │       ├── main.py                         FastAPI 入口
 │       ├── config.py                       Settings / get_config()
 │       ├── api/                            路由层
@@ -125,7 +125,7 @@ admin-ai-agent/
 │           └── exceptions.py               异常层级
 │
 ├── migrations/                             Alembic 迁移
-│   ├── env.py                              ✅
+│   ├── env.py                              
 │   └── versions/                           001_initial_tables
 │
 ├── scripts/                                运维脚本
@@ -158,15 +158,15 @@ admin-ai-agent/
 │   ├── scenarios/                          业务场景设计（11 个场景）
 │   └── guides/                             开发规范 / 测试计划 / 部署运维
 │
-├── alembic.ini                             ✅
-├── pyproject.toml                          ✅
-├── requirements.txt                        ✅
-├── requirements-dev.txt                    ✅
-├── .env.example                            ✅
-├── CHANGELOG.md                            ✅
-├── CONTRIBUTING.md                         ✅
-├── SECURITY.md                             ✅
-└── README.md                               ✅
+├── alembic.ini                             
+├── pyproject.toml                          
+├── requirements.txt                        
+├── requirements-dev.txt                    
+├── .env.example                            
+├── CHANGELOG.md                            
+├── CONTRIBUTING.md                         
+├── SECURITY.md                             
+└── README.md                               
 ```
 
 ---
