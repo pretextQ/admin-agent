@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     SSO_ENABLED: bool = False
     SSO_URL: str = ""
 
+    FEISHU_APP_ID: str = ""
+    FEISHU_APP_SECRET: str = ""
+    FEISHU_REDIRECT_URI: str = ""
+
     SECRET_KEY: str = DEFAULT_SECRET_KEY
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
@@ -80,6 +84,12 @@ class Settings(BaseSettings):
                 raise ValueError("生产环境必须配置 OPENAI_API_KEY")
             if "*" in self.CORS_ORIGINS:
                 raise ValueError("生产环境禁止 CORS_ORIGINS 包含通配符 *")
+            if not self.FEISHU_APP_ID:
+                raise ValueError("生产环境必须配置 FEISHU_APP_ID")
+            if not self.FEISHU_APP_SECRET:
+                raise ValueError("生产环境必须配置 FEISHU_APP_SECRET")
+            if not self.FEISHU_REDIRECT_URI:
+                raise ValueError("生产环境必须配置 FEISHU_REDIRECT_URI")
         return self
 
 
