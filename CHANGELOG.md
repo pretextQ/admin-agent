@@ -31,6 +31,7 @@
 - **Alembic 迁移配置**（`alembic.ini` + `migrations/env.py`）
 - **测试基础设施** — conftest.py / mock_llm / 自定义 marker
 - **单元测试** — 意图识别 / 槽位抽取 / API 健康检查，共 13 个用例，全部通过
+- **业务场景设计文档**（`docs/scenarios/`）— 11 个场景的完整业务逻辑设计（意图/槽位/规则/流程/工具/异常/审计/测试用例）
 
 ### 变更
 - `pyproject.toml` 确立为依赖与工具链的唯一真相源，`requirements*.txt` 由其派生

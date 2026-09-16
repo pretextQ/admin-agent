@@ -123,6 +123,7 @@ admin-ai-agent/
 │   ├── 行政智能系统需求文档.md              ✅ PRD
 │   ├── api/api-spec.md                     ✅ 接口规范
 │   ├── architecture/技术方案设计.md          ✅ 架构设计
+│   ├── scenarios/                          ✅ 业务场景设计（11 个场景）
 │   └── guides/                             ✅ 开发规范 / 测试计划 / 部署运维
 │
 ├── alembic.ini                             ✅
@@ -285,6 +286,7 @@ alembic downgrade -1
 | [需求文档](docs/行政智能系统需求文档.md) | 产品需求文档（PRD） |
 | [技术方案](docs/architecture/行政智能系统-技术方案设计.md) | 技术架构设计 |
 | [API 文档](docs/api/api-spec.md) | 接口规范 |
+| **[业务场景设计](docs/scenarios/README.md)** | **11 个业务场景详细设计（意图/槽位/规则/流程）** |
 | [设计计划与里程碑](docs/guides/设计计划与里程碑.md) | 项目规划 |
 | [开发规范](docs/guides/开发规范.md) | 工程流程与约束 |
 | [代码风格指南](docs/guides/代码风格指南.md) | 代码风格细则 |
