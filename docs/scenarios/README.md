@@ -57,7 +57,7 @@
 |----------|----------|------|
 | `policy_query` | - | 制度问答 |
 | `meeting_room_booking` | `meeting_room` | 会议室预定 |
-| `vehicle_booking` | `vehicle` | 车辆预定 |
+| `vehicle_booking` | `vehicle` | 车辆预定 | 代码待拆分（当前与会议室共用 meeting_room_booking） |
 | `status_query` | - | 综合查询 |
 | `material_request` | `material` | 物资领用 |
 | `leave_request` | `leave` | 请假申请 |

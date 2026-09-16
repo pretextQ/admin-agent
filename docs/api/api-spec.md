@@ -1,6 +1,6 @@
 # API 接口文档
 
-> 版本：V1.1　|　更新日期：2026-09-15　|　软件版本：0.1.0
+> 版本：V1.2　|　更新日期：2026-09-16　|　软件版本：0.1.0
 >
 > 在线文档：http://localhost:8000/docs （Swagger UI）
 >
@@ -52,7 +52,7 @@
 | 管理 | `/admin/tools` | GET | 工具列表 |
 | 管理 | `/admin/tools/{tool_id}/config` | PUT | 更新工具配置 |
 | 管理 | `/admin/metrics` | GET | 系统指标 |
-| 系统 | `/health` | GET | 健康检查 |
+| 系统 | `/api/health` | GET | 健康检查（不含 `/api/v1` 前缀） |
 
 ---
 
@@ -224,7 +224,32 @@ SSO 回调端点，接收授权码并换取 Token。
 
 ### 4.2 获取会话历史
 
-**GET** `/chat/history/{conversation_id}?limit=50&offset=0`
+**GET** `/chat/history/{conversation_id}`
+
+查询参数（遵循 §2.3 分页规范）：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `page` | int | 1 | 页码 |
+| `page_size` | int | 50 | 每页数量 |
+
+响应（分页字段统一为 `items/total/page/page_size`）：
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "items": [
+            {"id": "msg_001", "role": "user", "content": "你好", "created_at": "..."},
+            {"id": "msg_002", "role": "assistant", "content": "您好，请问有什么可以帮您？", "created_at": "..."}
+        ],
+        "total": 10,
+        "page": 1,
+        "page_size": 50
+    }
+}
+```
 
 仅可访问本人会话；越权返回 `40003`。
 
@@ -302,14 +327,14 @@ SSO 回调端点，接收授权码并换取 Token。
 | `type` | string | 过滤：leave / expense / travel / meeting_room / vehicle / material / asset / seal / certificate / onboarding |
 | `page` / `page_size` | int | 分页 |
 
-响应：
+响应（分页字段统一为 `items/total/page/page_size`）：
 
 ```json
 {
     "code": 0,
     "message": "success",
     "data": {
-        "tasks": [
+        "items": [
             {
                 "id": "task_123",
                 "type": "leave",
