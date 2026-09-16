@@ -64,7 +64,7 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 ## 项目结构
 
-> 标记说明：✅ 已交付；⬜ 规划中（本仓库当前仅包含文档，代码骨架尚未提交）。
+> 标记说明：✅ 已交付；⬜ 规划中。
 
 ```text
 admin-ai-agent/
@@ -72,53 +72,67 @@ admin-ai-agent/
 │   ├── __init__.py                         ✅
 │   └── admin_ai/                           ✅ 主包
 │       ├── __init__.py                     ✅
-│       ├── main.py                         ⬜ FastAPI 入口
-│       ├── config.py                       ⬜ Settings / get_config()
-│       ├── api/                            ⬜ 路由层
-│       │   ├── routes.py                   ⬜ 路由汇总
-│       │   ├── deps_context.py             ⬜ 依赖注入上下文
-│       │   ├── response.py                 ⬜ 统一响应信封与异常处理器
-│       │   ├── schemas.py                  ⬜ API Schema
-│       │   ├── chat.py                     ⬜ 对话接口
-│       │   ├── task.py                     ⬜ 任务/待办接口
-│       │   ├── knowledge.py                ⬜ 知识库接口
-│       │   ├── admin.py                    ⬜ 管理后台接口
-│       │   └── websocket.py                ⬜ WebSocket 对话
-│       ├── core/                           ⬜ 业务核心
-│       │   ├── agent/                      ⬜ orchestrator / intent / slot / dialog / prompt
-│       │   ├── rag/                        ⬜ retriever / embedder / splitter / reranker
-│       │   ├── tools/                      ⬜ base / registry / gateway / *_tool
-│       │   ├── rules/                      ⬜ engine / validators / policies
-│       │   └── auth/                       ⬜ sso / rbac / deps
-│       ├── db/                             ⬜ 数据库
-│       │   ├── database.py                 ⬜ Base / engine / session
-│       │   ├── models.py                   ⬜ SQLAlchemy 模型
-│       │   ├── schemas.py                  ⬜ 持久层 Schema
-│       │   └── orm/                        ⬜ 按实体拆分
-│       ├── services/                       ⬜ 服务层
-│       ├── middleware/                     ⬜ audit / rate_limit / logging
-│       └── utils/                          ⬜ logger / exceptions / helpers
+│       ├── main.py                         ✅ FastAPI 入口
+│       ├── config.py                       ✅ Settings / get_config()
+│       ├── api/                            ✅ 路由层
+│       │   ├── routes.py                   ✅ 路由汇总
+│       │   ├── deps_context.py             ✅ 依赖注入上下文
+│       │   ├── response.py                 ✅ 统一响应信封与异常处理器
+│       │   ├── schemas.py                  ✅ API Schema
+│       │   ├── auth.py                     ✅ 认证接口
+│       │   ├── chat.py                     ✅ 对话接口
+│       │   ├── task.py                     ✅ 任务/待办接口
+│       │   ├── knowledge.py                ✅ 知识库接口
+│       │   ├── admin.py                    ✅ 管理后台接口
+│       │   └── websocket.py                ✅ WebSocket 对话
+│       ├── core/                           ✅ 业务核心
+│       │   ├── agent/                      ✅ orchestrator / intent / slot / dialog / prompt
+│       │   ├── rag/                        ✅ retriever
+│       │   ├── tools/                      ✅ base / registry
+│       │   ├── rules/                      ✅ engine
+│       │   └── auth/                       ✅ deps
+│       ├── db/                             ✅ 数据库
+│       │   ├── database.py                 ✅ Base / engine / session
+│       │   ├── models.py                   ✅ SQLAlchemy 模型
+│       │   ├── schemas.py                  ✅ 持久层 Schema
+│       │   └── redis.py                    ✅ Redis 连接
+│       ├── services/                       ✅ 服务层
+│       │   ├── chat_service.py             ✅ 对话服务
+│       │   ├── task_service.py             ✅ 任务服务
+│       │   ├── knowledge_service.py        ✅ 知识库服务
+│       │   └── notification_service.py     ✅ 通知服务
+│       ├── middleware/                     ✅ 中间件
+│       │   ├── audit.py                    ✅ 审计中间件
+│       │   └── logging.py                  ✅ 日志中间件
+│       └── utils/                          ✅ 工具函数
+│           ├── logger.py                   ✅ structlog 配置
+│           └── exceptions.py               ✅ 异常层级
 │
-├── migrations/                             ⬜ Alembic 迁移
-│   ├── env.py                              ⬜
-│   └── versions/                           ⬜
+├── migrations/                             ✅ Alembic 迁移
+│   ├── env.py                              ✅
+│   └── versions/                           ✅
 │
-├── tests/                                  ⬜
-│   ├── conftest.py                         ⬜ 共享 fixture 与 marker
-│   └── admin_ai/                           ⬜ 与主包同构
-│       ├── test_api/                       ⬜
-│       ├── test_core/                      ⬜
-│       └── test_services/                  ⬜
+├── tests/                                  ✅ 测试
+│   ├── conftest.py                         ✅ 共享 fixture 与 marker
+│   └── admin_ai/                           ✅ 与主包同构
+│       ├── test_api/                       ✅ API 测试
+│       ├── test_core/                      ✅ 核心模块测试
+│       └── test_services/                  ✅ 服务层测试
 │
-├── scripts/                                ⬜ 初始化 / 种子数据脚本
 ├── docs/                                   ✅ 项目文档
-├── alembic.ini                             ⬜
+│   ├── 行政智能系统需求文档.md              ✅ PRD
+│   ├── api/api-spec.md                     ✅ 接口规范
+│   ├── architecture/技术方案设计.md          ✅ 架构设计
+│   └── guides/                             ✅ 开发规范 / 测试计划 / 部署运维
+│
+├── alembic.ini                             ✅
 ├── pyproject.toml                          ✅
 ├── requirements.txt                        ✅
 ├── requirements-dev.txt                    ✅
 ├── .env.example                            ✅
 ├── CHANGELOG.md                            ✅
 ├── CONTRIBUTING.md                         ✅
+├── SECURITY.md                             ✅
 └── README.md                               ✅
 ```
 
@@ -289,9 +303,11 @@ alembic downgrade -1
 - [x] API 接口文档
 - [x] 工程规范与测试计划
 - [x] 项目文档结构
-- [ ] 项目骨架代码
-- [ ] 核心模块开发
-- [ ] 测试与联调
+- [x] 项目骨架代码（FastAPI + SQLAlchemy + 路由 + 中间件）
+- [x] 核心模块开发（智能体 / RAG / 工具 / 规则 / 认证）
+- [x] 数据库模型（User / Conversation / Message / Task / Approval / Audit / Knowledge）
+- [x] 单元测试（13 个测试用例，全部通过）
+- [ ] 集成测试与联调
 - [ ] 上线部署
 
 ---
@@ -304,7 +320,7 @@ alembic downgrade -1
 
 ## 版本历史
 
-当前版本 **0.1.0**（文档阶段）。详见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **0.1.0**。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 

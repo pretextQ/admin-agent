@@ -5,7 +5,7 @@
 
 ---
 
-## [0.1.0] - 未发布
+## [0.1.0] - 2026-09-16
 
 ### 新增
 - 项目文档结构
@@ -14,6 +14,23 @@
 - API 接口文档
 - 开发规范、代码风格指南、测试计划、设计计划与里程碑
 - 工具链收敛为 ruff（format + lint）+ mypy + pytest + pre-commit
+- **FastAPI 项目骨架**（`app/admin_ai/main.py`）
+- **配置模块**（`app/admin_ai/config.py`）— pydantic-settings，生产 fail-fast
+- **数据库层**（`app/admin_ai/db/`）— SQLAlchemy 2.0 async 模型：User / Conversation / Message / Task / Approval / AuditLog / KnowledgeDoc
+- **API 路由层**（`app/admin_ai/api/`）— 认证 / 对话 / 任务 / 知识库 / 管理后台 / WebSocket 全套路由
+- **统一响应信封** `{code, message, data}` 与全局异常处理器
+- **智能体核心模块**（`app/admin_ai/core/agent/`）— 编排器 / 意图识别 / 槽位抽取 / 多轮对话管理 / Prompt 模板
+- **RAG 检索器**（`app/admin_ai/core/rag/retriever.py`）
+- **工具注册中心**（`app/admin_ai/core/tools/`）— BaseTool / ToolRegistry / ToolResult
+- **规则引擎**（`app/admin_ai/core/rules/engine.py`）— ValidationResult / RuleEngine
+- **认证依赖**（`app/admin_ai/core/auth/deps.py`）— get_current_user / get_admin_user
+- **服务层**（`app/admin_ai/services/`）— ChatService / TaskService / KnowledgeService / NotificationService
+- **中间件**（`app/admin_ai/middleware/`）— AuditMiddleware / TraceIdMiddleware
+- **Redis 连接管理**（`app/admin_ai/db/redis.py`）
+- **异常层级**（`app/admin_ai/utils/exceptions.py`）
+- **Alembic 迁移配置**（`alembic.ini` + `migrations/env.py`）
+- **测试基础设施** — conftest.py / mock_llm / 自定义 marker
+- **单元测试** — 意图识别 / 槽位抽取 / API 健康检查，共 13 个用例，全部通过
 
 ### 变更
 - `pyproject.toml` 确立为依赖与工具链的唯一真相源，`requirements*.txt` 由其派生
@@ -30,12 +47,6 @@
 
 ### 移除
 - 移除 black / isort / flake8 及其依赖，改由 ruff 统一承担
-
-### 待开发
-- FastAPI 项目骨架
-- 核心业务模块
-- 数据库模型
-- API 接口实现
 
 ---
 
