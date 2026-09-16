@@ -38,7 +38,9 @@ client.interceptors.response.use(
       error.code = body.code;
       return Promise.reject(error);
     }
-    return body.data;
+    // 解包：将 data 字段放到 response.data 上
+    response.data = body.data;
+    return response;
   },
   (error) => {
     if (error.response?.status === 401) {

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { Message } from "@/types";
+import type { Message } from "@/types";
 import { chatApi } from "@/api";
 import { useChatStore } from "@/stores";
 import MessageList from "./MessageList";

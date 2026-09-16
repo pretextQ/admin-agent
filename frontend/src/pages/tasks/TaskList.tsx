@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tabs, Tag, Empty, Spin, List } from "@douyinfe/semi-ui";
 import { taskApi } from "@/api";
-import type { TaskItem, TaskStatus } from "@/types";
+import type { TaskItem } from "@/types";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "blue",
@@ -98,7 +98,7 @@ export default function TaskList() {
               <div style={{ width: "100%" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <span style={{ fontWeight: 500 }}>{item.title || "未命名任务"}</span>
-                  <Tag size="small" color={STATUS_COLORS[item.status || ""]}>
+                  <Tag size="small" color={STATUS_COLORS[item.status || ""] as "blue" | "orange" | "green" | "red" | "grey"}>
                     {STATUS_LABELS[item.status || ""] || item.status}
                   </Tag>
                 </div>

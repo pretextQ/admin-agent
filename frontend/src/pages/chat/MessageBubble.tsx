@@ -1,5 +1,5 @@
 import { Avatar } from "@douyinfe/semi-ui";
-import { IconUser, IconRobot } from "@douyinfe/semi-icons";
+import { IconUser, IconBolt } from "@douyinfe/semi-icons";
 import type { Message } from "@/types";
 import ConfirmCard from "./ConfirmCard";
 
@@ -22,7 +22,7 @@ export default function MessageBubble({ message, onConfirm }: MessageBubbleProps
     >
       {!isUser && (
         <Avatar size="small" style={{ background: "#3370ff", flexShrink: 0 }}>
-          <IconRobot />
+          <IconBolt />
         </Avatar>
       )}
       <div style={{ maxWidth: "75%" }}>
