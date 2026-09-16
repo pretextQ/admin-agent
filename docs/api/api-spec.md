@@ -1,6 +1,6 @@
 # API 接口文档
 
-> 版本：V1.2　|　更新日期：2026-09-16　|　软件版本：0.1.0
+> 版本：V1.3　|　更新日期：2026-09-16　|　软件版本：0.1.0
 >
 > 在线文档：http://localhost:8000/docs （Swagger UI）
 >
@@ -24,11 +24,9 @@
 
 | 模块 | 接口 | 方法 | 说明 |
 |------|------|------|------|
-| 认证 | `/auth/login` | POST | 账号密码登录 |
-| 认证 | `/auth/sso/authorize` | GET | SSO 授权跳转 |
-| 认证 | `/auth/sso/callback` | GET | SSO 回调 |
-| 认证 | `/auth/logout` | POST | 登出 |
-| 认证 | `/auth/refresh` | POST | 刷新令牌 |
+| 认证 | `/auth/feishu/login-url` | GET | 获取飞书授权跳转地址 |
+| 认证 | `/auth/feishu/callback` | GET | 飞书 OAuth 回调（换 token + 签发 JWT） |
+| 认证 | `/auth/dev-login` | GET | 开发环境登录（仅 development） |
 | 认证 | `/auth/me` | GET | 当前用户信息 |
 | 对话 | `/chat/send` | POST | 发送消息 |
 | 对话 | `/chat/history/{conversation_id}` | GET | 获取会话历史 |
@@ -115,16 +113,35 @@
 
 ## 三、认证接口
 
-### 3.1 账号密码登录
+### 3.1 获取飞书授权地址
 
-**POST** `/auth/login`
+**GET** `/auth/feishu/login-url`
+
+生成飞书 OAuth 授权跳转地址，前端拿到后引导用户跳转。
+
+响应：
 
 ```json
 {
-    "employee_id": "EMP1001",
-    "password": "******"
+    "code": 0,
+    "message": "success",
+    "data": {
+        "login_url": "https://open.feishu.cn/open-apis/authen/v1/index?app_id=...&redirect_uri=...&state=...",
+        "state": "random_csrf_token"
+    }
 }
 ```
+
+### 3.2 飞书 OAuth 回调
+
+**GET** `/auth/feishu/callback`
+
+飞书授权完成后的回调端点。服务端用授权码换取 `user_access_token`，拉取用户信息，签发本地 JWT。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `code` | string | 飞书授权码，必填 |
+| `state` | string | 防 CSRF 状态码，必填 |
 
 响应：
 
@@ -140,42 +157,27 @@
 }
 ```
 
-### 3.2 SSO 登录
+错误：
 
-**GET** `/auth/sso/authorize`
+| 场景 | 错误码 | HTTP 状态码 |
+|------|--------|-------------|
+| state 无效 | 40001 | 400 |
+| 换取飞书 token 失败 | 50002 | 502 |
+| 获取飞书用户信息失败 | 50002 | 502 |
 
-重定向到企业 SSO 认证页面。用户授权后回调到 `/auth/sso/callback`。
+### 3.3 开发环境登录
 
-**GET** `/auth/sso/callback`
+**GET** `/auth/dev-login`
 
-SSO 回调端点，接收授权码并换取 Token。
+仅 `ENVIRONMENT=development` 时可用，生产环境返回 `40003`。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `code` | string | SSO 授权码，必填 |
-| `state` | string | 防 CSRF 状态码，必填 |
+| `employee_id` | string | 可选，默认 `admin001` |
 
-响应与 3.1 相同。
+响应与 3.2 相同。
 
-### 3.3 登出
-
-**POST** `/auth/logout`
-
-使当前 Token 失效。需携带 `Authorization: Bearer <token>`。
-
-```json
-{
-    "code": 0,
-    "message": "success",
-    "data": null
-}
-```
-
-### 3.4 刷新令牌
-
-**POST** `/auth/refresh`（携带当前有效 Token）
-
-### 3.5 当前用户
+### 3.4 当前用户
 
 **GET** `/auth/me`
 
@@ -547,10 +549,11 @@ Sec-WebSocket-Protocol: bearer,<JWT>
 ### 12.1 cURL
 
 ```bash
-# 登录
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"employee_id": "EMP1001", "password": "******"}'
+# 获取飞书授权地址
+curl http://localhost:8000/api/v1/auth/feishu/login-url
+
+# 开发环境登录
+curl http://localhost:8000/api/v1/auth/dev-login?employee_id=admin001
 
 # 发送消息
 curl -X POST http://localhost:8000/api/v1/chat/send \
