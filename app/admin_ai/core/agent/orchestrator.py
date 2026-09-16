@@ -94,6 +94,35 @@ class Orchestrator:
     ) -> dict[str, Any]:
         """处理用户消息的主流程。"""
         try:
+            # 0. 确认恢复：跳过意图识别直接从工具执行继续
+            if context.confirmed and context.business_type:
+                context.state = AgentState.EXECUTING
+                tool = self.tool_registry.get_tool(context.business_type)
+                if tool:
+                    result = await tool.execute(context.slots, context.user_id)
+                    context.tool_calls.append({
+                        "tool": context.business_type,
+                        "input": context.slots,
+                        "output": result.content,
+                    })
+                    if result.is_error:
+                        context.state = AgentState.TRANSFERRED
+                        return {
+                            "content": f"系统暂时无法完成您的请求，已为您转接人工客服。错误：{result.content}",
+                            "transfer_to_human": True,
+                            "transfer_task_data": {
+                                "business_type": context.business_type,
+                                "slots": context.slots,
+                                "user_id": context.user_id,
+                            },
+                        }
+                context.state = AgentState.COMPLETED
+                return {
+                    "content": "操作已完成",
+                    "task_type": context.business_type,
+                    "slots": context.slots,
+                }
+
             # 1. 意图识别
             logger.info("开始处理", user_id=context.user_id, message=user_message[:50])
             context.state = AgentState.INTENT_RECOGNIZING
@@ -116,14 +145,25 @@ class Orchestrator:
                 context.state = AgentState.COMPLETED
                 return {"content": "正在为您查询状态...", "needs_status_query": True}
 
-            # 5. 槽位抽取
+            # 5. 未知意图走转人工
+            if context.intent == "other" or (
+                context.business_type is None
+                and context.intent not in ("greeting", "policy_query", "status_query")
+            ):
+                context.state = AgentState.TRANSFERRED
+                return {
+                    "content": "抱歉，我暂时无法理解您的需求，正在为您转接人工客服。",
+                    "transfer_to_human": True,
+                }
+
+            # 6. 槽位抽取
             context.state = AgentState.SLOT_FILLING
             slots = await self.slot_extractor.extract(
                 user_message, context.intent, context.business_type, context.slots, attachments
             )
             context.slots.update(slots)
 
-            # 6. 检查完整性
+            # 7. 检查完整性
             missing = self.slot_extractor.check_completeness(
                 context.business_type or "", context.slots
             )
@@ -146,7 +186,7 @@ class Orchestrator:
                     "requires_action": True,
                 }
 
-            # 7. 规则校验
+            # 8. 规则校验
             context.state = AgentState.VALIDATING
             validation = await self.rule_engine.validate(
                 context.business_type or "", context.slots, context.user_id
@@ -154,7 +194,7 @@ class Orchestrator:
             if not validation.passed:
                 return {"content": "校验不通过：" + "；".join(validation.errors)}
 
-            # 8. 风险评估与确认
+            # 9. 风险评估与确认
             context.state = AgentState.CONFIRMING
             if context.business_type in HIGH_RISK_TYPES and not context.confirmed:
                 context.risk_level = "high"
@@ -169,7 +209,7 @@ class Orchestrator:
                     "requires_action": True,
                 }
 
-            # 9. 执行工具调用
+            # 10. 执行工具调用
             context.state = AgentState.EXECUTING
             tool = self.tool_registry.get_tool(context.business_type or "")
             if tool:
@@ -184,9 +224,14 @@ class Orchestrator:
                     return {
                         "content": f"系统暂时无法完成您的请求，已为您转接人工客服。错误：{result.content}",
                         "transfer_to_human": True,
+                        "transfer_task_data": {
+                            "business_type": context.business_type,
+                            "slots": context.slots,
+                            "user_id": context.user_id,
+                        },
                     }
 
-            # 10. 完成
+            # 11. 完成
             context.state = AgentState.COMPLETED
             return {
                 "content": f"操作已完成",

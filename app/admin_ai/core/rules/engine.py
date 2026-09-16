@@ -91,6 +91,7 @@ class RuleEngine:
             "travel": self._validate_travel,
             "seal": self._validate_seal,
             "material": self._validate_material,
+            "meeting_room": self._validate_meeting_room,
         }
 
         validator = validators.get(business_type)
@@ -228,4 +229,38 @@ class RuleEngine:
 
         if quantity <= 0:
             result.errors.append("领用数量必须大于0")
+            result.passed = False
+
+    async def _validate_meeting_room(
+        self, slots: dict[str, Any], user_id: str, result: ValidationResult
+    ) -> None:
+        """校验会议室预定规则。"""
+        start_time = slots.get("start_time")
+        end_time = slots.get("end_time")
+
+        if not start_time or not end_time:
+            result.errors.append("开始时间和结束时间为必填项")
+            result.passed = False
+            return
+
+        try:
+            start = datetime.fromisoformat(str(start_time))
+            end = datetime.fromisoformat(str(end_time))
+            duration_hours = (end - start).total_seconds() / 3600
+
+            if duration_hours <= 0:
+                result.errors.append("结束时间必须晚于开始时间")
+                result.passed = False
+                return
+
+            if duration_hours > 8:
+                result.errors.append("会议室预定时长不能超过8小时")
+                result.passed = False
+                return
+
+            if start.date() != end.date():
+                result.errors.append("会议室预定必须在同一天内")
+                result.passed = False
+        except (ValueError, TypeError):
+            result.errors.append("时间格式错误")
             result.passed = False
