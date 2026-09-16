@@ -5,7 +5,9 @@
 > **"员工动嘴，系统办事"**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Node](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green.svg)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18%2B-blue.svg)](https://react.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-orange.svg)](CHANGELOG.md)
 
@@ -47,6 +49,8 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 ## 技术栈
 
+### 后端
+
 | 层级 | 技术选型 | 说明 |
 |------|----------|------|
 | 语言 / 包管理 | Python 3.11+ / uv | 虚拟环境与依赖管理 |
@@ -60,6 +64,19 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 | 可观测性 | structlog + Prometheus | 结构化日志与指标 |
 | 代码质量 | Ruff + mypy + pytest + pre-commit | 格式、类型、测试 |
 | 部署 | Docker + Nginx | 容器化部署 |
+
+### 前端
+
+| 层级 | 技术选型 | 说明 |
+|------|----------|------|
+| 框架 | React 18 + TypeScript | 飞书 H5 应用 |
+| 构建 | Vite 5 | 开发启动 <1s，HMR 极快 |
+| UI 库 | Semi Design | 字节出品，飞书视觉语言一致 |
+| 状态管理 | Zustand | 轻量（1KB），零 boilerplate |
+| HTTP | Axios + TanStack Query | 拦截器 + 自动缓存/重试 |
+| 路由 | React Router 6 | 标准方案，支持懒加载 |
+| 包管理 | pnpm | 快速、磁盘友好 |
+| 代码质量 | ESLint + Vitest | 格式、测试 |
 
 ---
 
@@ -123,6 +140,19 @@ admin-ai-agent/
 │       ├── test_core/                      ✅ 核心模块测试
 │       └── test_services/                  ✅ 服务层测试
 │
+├── frontend/                               ✅ 前端（React + Semi Design）
+│   ├── src/
+│   │   ├── api/                            ✅ API 层（axios + 信封解包）
+│   │   ├── stores/                         ✅ Zustand 状态管理
+│   │   ├── hooks/                          ✅ 自定义 Hooks
+│   │   ├── pages/                          ✅ 页面（chat / tasks / callback / login）
+│   │   ├── components/                     ✅ 通用组件（Layout / ErrorBoundary / Empty）
+│   │   ├── utils/                          ✅ 工具函数（飞书环境检测）
+│   │   └── types/                          ✅ TypeScript 类型定义
+│   ├── public/                             ✅ 静态资源 + 飞书 H5 SDK
+│   ├── package.json
+│   └── vite.config.ts
+│
 ├── docs/                                   ✅ 项目文档
 │   ├── 行政智能系统需求文档.md              ✅ PRD
 │   ├── api/api-spec.md                     ✅ 接口规范
@@ -148,6 +178,8 @@ admin-ai-agent/
 | 环境 | 版本要求 | 说明 |
 |------|----------|------|
 | Python | 3.11+ | 推荐 3.12 |
+| Node.js | 20+ | 前端构建 |
+| pnpm | 9+ | 前端包管理 |
 | uv | 最新版 | Python 包管理工具（可回退到 pip） |
 | PostgreSQL | 15+ | 主数据库 |
 | Redis | 7+ | 缓存 / 会话 |
@@ -176,7 +208,7 @@ cp .env.example .env
 #   FEISHU_APP_SECRET 飞书应用 Secret（生产必须配置）
 ```
 
-### 3. 本地开发
+### 3. 后端开发
 
 ```bash
 # 安装 uv（如未安装）
@@ -197,7 +229,25 @@ alembic upgrade head
 uvicorn app.admin_ai.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 4. Docker 启动
+### 4. 前端开发
+
+```bash
+cd frontend
+
+# 安装依赖
+pnpm install
+
+# 启动开发服务器（http://localhost:3000，API 代理到 8000）
+pnpm dev
+
+# 构建生产版本
+pnpm build
+
+# 代码检查
+pnpm lint
+```
+
+### 5. Docker 启动
 
 > 部署所需文件见 [部署与运维](docs/guides/部署与运维.md)。
 
@@ -206,17 +256,17 @@ docker compose up -d
 docker compose logs -f api
 ```
 
-### 5. 访问服务
+### 6. 访问服务
 
 | 服务 | 地址 |
 |------|------|
+| 前端开发 | http://localhost:3000 |
 | API 服务 | http://localhost:8000 |
 | 健康检查 | http://localhost:8000/api/health |
 | Swagger 文档 | http://localhost:8000/docs |
 | ReDoc 文档 | http://localhost:8000/redoc |
-| 指标 | http://localhost:8000/metrics |
 
-### 6. 本地开发登录
+### 7. 本地开发登录
 
 开发环境（`ENVIRONMENT=development`）提供 `dev-login` 端点，无需飞书 OAuth 即可获取 JWT：
 
@@ -308,7 +358,8 @@ alembic downgrade -1
 | 文档 | 说明 |
 |------|------|
 | [需求文档](docs/行政智能系统需求文档.md) | 产品需求文档（PRD） |
-| [技术方案](docs/architecture/行政智能系统-技术方案设计.md) | 技术架构设计 |
+| [技术方案](docs/architecture/行政智能系统-技术方案设计.md) | 后端技术架构设计 |
+| [前端技术方案](docs/frontend/前端技术方案设计.md) | 前端架构设计（React + Semi Design） |
 | [API 文档](docs/api/api-spec.md) | 接口规范 |
 | **[业务场景设计](docs/scenarios/README.md)** | **11 个业务场景详细设计（意图/槽位/规则/流程）** |
 | [设计计划与里程碑](docs/guides/设计计划与里程碑.md) | 项目规划 |
@@ -323,6 +374,8 @@ alembic downgrade -1
 ---
 
 ## 项目状态
+
+### 后端
 
 - [x] 需求文档
 - [x] 技术方案设计
@@ -339,6 +392,22 @@ alembic downgrade -1
 - [x] 单元测试（全部通过）
 - [ ] 集成测试与联调
 - [ ] 上线部署
+
+### 前端
+
+- [x] 前端技术方案设计（React + Semi Design + 飞书 H5）
+- [x] 项目脚手架（Vite + React 19 + TypeScript）
+- [x] 类型定义 + API 层（Axios 拦截器 + 信封解包）
+- [x] Zustand 状态管理（auth/chat/app stores）
+- [x] 认证流程（OAuth 回调 + dev-login + useAuth hook）
+- [x] 对话页面（消息收发 + 确认卡片 + 转人工）
+- [x] 任务页面（列表 + 筛选 + 详情 + 时间线）
+- [x] 布局组件 + 路由配置 + ErrorBoundary
+- [x] 生产构建通过（595KB JS + 236KB CSS）
+- [ ] 审批操作（同意/驳回/加签）— 下迭代
+- [ ] WebSocket 实时对话 — 下迭代
+- [ ] E2E 测试
+- [ ] 前端部署
 
 ---
 
