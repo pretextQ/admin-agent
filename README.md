@@ -31,12 +31,12 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 | 场景 | 频次 | 复杂度 | 自动化程度 |
 |------|------|--------|-----------|
-| 制度问答 | 高 | 简单 | ✅ 全自动（RAG） |
-| 会议室 / 车辆预定 | 高 | 简单 | ✅ 全自动 |
-| 综合查询（进度/余额） | 高 | 简单 | ✅ 全自动 |
-| 物资领用 | 高 | 中 | ✅ 自动（校验库存/限额） |
-| 请假申请 | 高 | 中 | ✅ 自动（校验余额/冲突） |
-| 证明开具 | 中 | 中 | ✅ 自动（生成 + 推送盖章） |
+| 制度问答 | 高 | 简单 | 全自动（RAG） |
+| 会议室 / 车辆预定 | 高 | 简单 | 全自动 |
+| 综合查询（进度/余额） | 高 | 简单 | 全自动 |
+| 物资领用 | 高 | 中 | 自动（校验库存/限额） |
+| 请假申请 | 高 | 中 | 自动（校验余额/冲突） |
+| 证明开具 | 中 | 中 | 自动（生成 + 推送盖章） |
 | 报销申请 | 中 | 复杂 | ⚠️ 半自动（草拟 + 人工确认） |
 | 差旅申请 / 订票 | 中 | 复杂 | ⚠️ 半自动 |
 | 固定资产领用 / 归还 | 中 | 中 | ⚠️ 半自动 |
@@ -84,79 +84,79 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 ```text
 admin-ai-agent/
-├── app/                                    ✅ 包根
+├── app/                                    包根
 │   ├── __init__.py                         ✅
-│   └── admin_ai/                           ✅ 主包
+│   └── admin_ai/                           主包
 │       ├── __init__.py                     ✅
-│       ├── main.py                         ✅ FastAPI 入口
-│       ├── config.py                       ✅ Settings / get_config()
-│       ├── api/                            ✅ 路由层
-│       │   ├── routes.py                   ✅ 路由汇总
-│       │   ├── deps_context.py             ✅ 依赖注入上下文
-│       │   ├── response.py                 ✅ 统一响应信封与异常处理器
-│       │   ├── schemas.py                  ✅ API Schema
-│       │   ├── auth.py                     ✅ 认证接口
-│       │   ├── chat.py                     ✅ 对话接口
-│       │   ├── task.py                     ✅ 任务/待办接口
-│       │   ├── knowledge.py                ✅ 知识库接口
-│       │   ├── admin.py                    ✅ 管理后台接口
-│       │   └── websocket.py                ✅ WebSocket 对话
-│       ├── core/                           ✅ 业务核心
-│       │   ├── agent/                      ✅ orchestrator / intent / slot / dialog / prompt
-│       │   ├── rag/                        ✅ retriever
-│       │   ├── tools/                      ✅ base / registry
-│       │   ├── rules/                      ✅ engine
-│       │   └── auth/                       ✅ deps / jwt_token / sso（飞书 OAuth）
-│       ├── db/                             ✅ 数据库
-│       │   ├── database.py                 ✅ Base / engine / session
-│       │   ├── models.py                   ✅ SQLAlchemy 模型
-│       │   ├── schemas.py                  ✅ 持久层 Schema
-│       │   └── redis.py                    ✅ Redis 连接
-│       ├── services/                       ✅ 服务层
-│       │   ├── chat_service.py             ✅ 对话服务
-│       │   ├── task_service.py             ✅ 任务服务
-│       │   ├── knowledge_service.py        ✅ 知识库服务
-│       │   └── notification_service.py     ✅ 通知服务
-│       ├── middleware/                     ✅ 中间件
-│       │   ├── audit.py                    ✅ 审计中间件
-│       │   └── logging.py                  ✅ 日志中间件
-│       └── utils/                          ✅ 工具函数
-│           ├── logger.py                   ✅ structlog 配置
-│           └── exceptions.py               ✅ 异常层级
+│       ├── main.py                         FastAPI 入口
+│       ├── config.py                       Settings / get_config()
+│       ├── api/                            路由层
+│       │   ├── routes.py                   路由汇总
+│       │   ├── deps_context.py             依赖注入上下文
+│       │   ├── response.py                 统一响应信封与异常处理器
+│       │   ├── schemas.py                  API Schema
+│       │   ├── auth.py                     认证接口
+│       │   ├── chat.py                     对话接口
+│       │   ├── task.py                     任务/待办接口
+│       │   ├── knowledge.py                知识库接口
+│       │   ├── admin.py                    管理后台接口
+│       │   └── websocket.py                WebSocket 对话
+│       ├── core/                           业务核心
+│       │   ├── agent/                      orchestrator / intent / slot / dialog / prompt
+│       │   ├── rag/                        retriever
+│       │   ├── tools/                      base / registry
+│       │   ├── rules/                      engine
+│       │   └── auth/                       deps / jwt_token / sso（飞书 OAuth）
+│       ├── db/                             数据库
+│       │   ├── database.py                 Base / engine / session
+│       │   ├── models.py                   SQLAlchemy 模型
+│       │   ├── schemas.py                  持久层 Schema
+│       │   └── redis.py                    Redis 连接
+│       ├── services/                       服务层
+│       │   ├── chat_service.py             对话服务
+│       │   ├── task_service.py             任务服务
+│       │   ├── knowledge_service.py        知识库服务
+│       │   └── notification_service.py     通知服务
+│       ├── middleware/                     中间件
+│       │   ├── audit.py                    审计中间件
+│       │   └── logging.py                  日志中间件
+│       └── utils/                          工具函数
+│           ├── logger.py                   structlog 配置
+│           └── exceptions.py               异常层级
 │
-├── migrations/                             ✅ Alembic 迁移
+├── migrations/                             Alembic 迁移
 │   ├── env.py                              ✅
-│   └── versions/                           ✅ 001_initial_tables
+│   └── versions/                           001_initial_tables
 │
-├── scripts/                                ✅ 运维脚本
-│   └── seed_admin.py                       ✅ 管理员账号初始化
+├── scripts/                                运维脚本
+│   └── seed_admin.py                       管理员账号初始化
 │
-├── tests/                                  ✅ 测试
-│   ├── conftest.py                         ✅ 共享 fixture 与 marker
-│   └── admin_ai/                           ✅ 与主包同构
-│       ├── test_api/                       ✅ API 测试
-│       ├── test_core/                      ✅ 核心模块测试
-│       └── test_services/                  ✅ 服务层测试
+├── tests/                                  测试
+│   ├── conftest.py                         共享 fixture 与 marker
+│   └── admin_ai/                           与主包同构
+│       ├── test_api/                       API 测试
+│       ├── test_core/                      核心模块测试
+│       └── test_services/                  服务层测试
 │
-├── frontend/                               ✅ 前端（React + Semi Design）
+├── frontend/                               前端（React + Semi Design）
 │   ├── src/
-│   │   ├── api/                            ✅ API 层（axios + 信封解包）
-│   │   ├── stores/                         ✅ Zustand 状态管理
-│   │   ├── hooks/                          ✅ 自定义 Hooks
-│   │   ├── pages/                          ✅ 页面（chat / tasks / callback / login）
-│   │   ├── components/                     ✅ 通用组件（Layout / ErrorBoundary / Empty）
-│   │   ├── utils/                          ✅ 工具函数（飞书环境检测）
-│   │   └── types/                          ✅ TypeScript 类型定义
-│   ├── public/                             ✅ 静态资源 + 飞书 H5 SDK
+│   │   ├── api/                            API 层（axios + 信封解包）
+│   │   ├── stores/                         Zustand 状态管理
+│   │   ├── hooks/                          自定义 Hooks
+│   │   ├── pages/                          页面（chat / tasks / callback / login）
+│   │   ├── components/                     通用组件（Layout / ErrorBoundary / Empty）
+│   │   ├── utils/                          工具函数（飞书环境检测）
+│   │   └── types/                          TypeScript 类型定义
+│   ├── public/                             静态资源 + 飞书 H5 SDK
 │   ├── package.json
 │   └── vite.config.ts
 │
-├── docs/                                   ✅ 项目文档
-│   ├── 行政智能系统需求文档.md              ✅ PRD
-│   ├── api/api-spec.md                     ✅ 接口规范
-│   ├── architecture/技术方案设计.md          ✅ 架构设计
-│   ├── scenarios/                          ✅ 业务场景设计（11 个场景）
-│   └── guides/                             ✅ 开发规范 / 测试计划 / 部署运维
+├── docs/                                   项目文档
+│   ├── 行政智能系统需求文档.md              PRD
+│   ├── api/api-spec.md                     接口规范
+│   ├── architecture/技术方案设计.md          架构设计
+│   ├── scenarios/                          业务场景设计（11 个场景）
+│   └── guides/                             开发规范 / 测试计划 / 部署运维
 │
 ├── alembic.ini                             ✅
 ├── pyproject.toml                          ✅
