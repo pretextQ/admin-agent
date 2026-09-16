@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.admin_ai.core.auth.jwt_token import create_access_token
 from app.admin_ai.main import create_app
 
 
@@ -33,11 +34,15 @@ class TestHealthAPI:
         assert data["code"] == 0
         assert "conversation_id" in data["data"]
 
+    @pytest.mark.integration
     async def test_tasks_my_endpoint(self) -> None:
+        """需要数据库的集成测试。"""
         app = create_app()
         transport = ASGITransport(app=app)
+        token = create_access_token({"sub": "user_001", "employee_id": "EMP1001", "role": "employee"})
+        headers = {"Authorization": f"Bearer {token}"}
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/api/v1/tasks/my")
+            response = await client.get("/api/v1/tasks/my", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert data["code"] == 0
