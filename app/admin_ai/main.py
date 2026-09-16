@@ -13,6 +13,10 @@ import structlog
 from app.admin_ai.api.response import register_exception_handlers
 from app.admin_ai.api.routes import create_router
 from app.admin_ai.config import get_config
+from app.admin_ai.core.agent.dialog import DialogManager
+from app.admin_ai.core.agent.intent import IntentRecognizer
+from app.admin_ai.core.agent.orchestrator import Orchestrator
+from app.admin_ai.core.agent.slot import SlotExtractor
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.registry import init_tools
 from app.admin_ai.utils.logger import configure_logging
@@ -35,6 +39,20 @@ async def lifespan(app: FastAPI):
     rule_engine = RuleEngine()
     app.state.rule_engine = rule_engine
     logger.info("规则引擎初始化完成")
+
+    # 初始化编排器
+    intent_recognizer = IntentRecognizer()
+    slot_extractor = SlotExtractor()
+    dialog_manager = DialogManager()
+    orchestrator = Orchestrator(
+        intent_recognizer=intent_recognizer,
+        slot_extractor=slot_extractor,
+        dialog_manager=dialog_manager,
+        rule_engine=rule_engine,
+        tool_registry=tool_registry,
+    )
+    app.state.orchestrator = orchestrator
+    logger.info("编排器初始化完成")
 
     yield
 
