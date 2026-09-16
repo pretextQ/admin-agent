@@ -21,7 +21,8 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 - 🔄 多轮对话：信息不全时逐个反问，不猜测
 - 🔧 工具调用：对接 OA、审批流、物资、日程等存量系统
 - 📚 知识检索：RAG 检索制度文档并附引用来源
-- 🔐 分级授权：低 / 中 / 高风险场景采用不同处理策略
+- 🔐 飞书 OAuth 登录：企业 SSO 授权 + 本地 JWT，开发环境提供 dev-login
+- ⚖️ 分级授权：低 / 中 / 高风险场景采用不同处理策略
 - 📋 全流程审计：操作留痕、可追溯
 
 **支持场景：**
@@ -90,7 +91,7 @@ admin-ai-agent/
 │       │   ├── rag/                        ✅ retriever
 │       │   ├── tools/                      ✅ base / registry
 │       │   ├── rules/                      ✅ engine
-│       │   └── auth/                       ✅ deps
+│       │   └── auth/                       ✅ deps / jwt_token / sso（飞书 OAuth）
 │       ├── db/                             ✅ 数据库
 │       │   ├── database.py                 ✅ Base / engine / session
 │       │   ├── models.py                   ✅ SQLAlchemy 模型
@@ -110,7 +111,10 @@ admin-ai-agent/
 │
 ├── migrations/                             ✅ Alembic 迁移
 │   ├── env.py                              ✅
-│   └── versions/                           ✅
+│   └── versions/                           ✅ 001_initial_tables
+│
+├── scripts/                                ✅ 运维脚本
+│   └── seed_admin.py                       ✅ 管理员账号初始化
 │
 ├── tests/                                  ✅ 测试
 │   ├── conftest.py                         ✅ 共享 fixture 与 marker
@@ -165,9 +169,11 @@ cd admin-ai-agent
 ```bash
 cp .env.example .env
 # 编辑 .env，至少填写：
-#   DATABASE_URL   PostgreSQL 连接
-#   REDIS_URL      Redis 连接
-#   OPENAI_API_KEY LLM API Key
+#   DATABASE_URL      PostgreSQL 连接
+#   REDIS_URL         Redis 连接
+#   OPENAI_API_KEY    LLM API Key
+#   FEISHU_APP_ID     飞书应用 ID（生产必须配置）
+#   FEISHU_APP_SECRET 飞书应用 Secret（生产必须配置）
 ```
 
 ### 3. 本地开发
@@ -209,6 +215,21 @@ docker compose logs -f api
 | Swagger 文档 | http://localhost:8000/docs |
 | ReDoc 文档 | http://localhost:8000/redoc |
 | 指标 | http://localhost:8000/metrics |
+
+### 6. 本地开发登录
+
+开发环境（`ENVIRONMENT=development`）提供 `dev-login` 端点，无需飞书 OAuth 即可获取 JWT：
+
+```bash
+# 获取管理员 Token
+curl "http://localhost:8000/api/v1/auth/dev-login?employee_id=admin001"
+
+# 获取普通员工 Token
+curl "http://localhost:8000/api/v1/auth/dev-login?employee_id=emp001"
+
+# 初始化管理员账号（首次）
+python scripts/seed_admin.py
+```
 
 ---
 
@@ -273,6 +294,9 @@ alembic downgrade -1
 | `LLM_MODEL` | 模型名称 | `gpt-4o-mini` |
 | `CHROMA_HOST` / `CHROMA_PORT` | 向量库地址 | `localhost` / `8005` |
 | `SECRET_KEY` | JWT 密钥（生产必须修改） | - |
+| `FEISHU_APP_ID` | 飞书应用 App ID | - |
+| `FEISHU_APP_SECRET` | 飞书应用 App Secret（生产必须配置） | - |
+| `FEISHU_REDIRECT_URI` | 飞书 OAuth 回调地址 | - |
 | `CORS_ORIGINS` | 允许的跨域来源 | `[]`（生产禁止 `["*"]`） |
 
 完整清单见 [.env.example](.env.example)。
@@ -306,9 +330,13 @@ alembic downgrade -1
 - [x] 工程规范与测试计划
 - [x] 项目文档结构
 - [x] 项目骨架代码（FastAPI + SQLAlchemy + 路由 + 中间件）
-- [x] 核心模块开发（智能体 / RAG / 工具 / 规则 / 认证）
+- [x] 核心模块开发（编排器 / 意图识别 / 工具 / 规则引擎）
 - [x] 数据库模型（User / Conversation / Message / Task / Approval / Audit / Knowledge）
-- [x] 单元测试（13 个测试用例，全部通过）
+- [x] Alembic 首次迁移（7 张表）
+- [x] 对话接口接上编排器（chat.py → orchestrator.process()）
+- [x] 审批多级链（多步审批 / 加签 / 状态校验）
+- [x] 飞书 OAuth 登录（授权码模式 / dev-login）
+- [x] 单元测试（全部通过）
 - [ ] 集成测试与联调
 - [ ] 上线部署
 

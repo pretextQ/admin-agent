@@ -8,6 +8,32 @@
 ## [0.1.0] - 2026-09-16
 
 ### 新增
+- **对话接口接上编排器** — `/chat/send` 调用 `orchestrator.process()`，返回统一信封
+- **编排器逻辑补漏** — 未知意图转人工、确认恢复路径、工具报错返回 transfer_task_data
+- **Alembic 首次迁移** — 7 张表：users / conversations / messages / tasks / approvals / audit_logs / knowledge_docs
+- **审批多级链修复** — action/状态校验、多步审批检查、加签（add_sign）、timeline ownership
+- **知识库接口诚实化** — upload 返回 `pending_index`、search 用 ILIKE 关键词匹配占位
+- **飞书 OAuth 登录** — 授权码模式（`/auth/feishu/login-url` + `/auth/feishu/callback`）
+- **开发环境登录** — `/auth/dev-login` 仅 development 可用，无需飞书 OAuth
+- **管理员种子脚本** — `scripts/seed_admin.py` 初始化 admin001 账号
+- **会议室规则校验** — `_validate_meeting_room`（时长 ≤8h、同一天）
+- **UserModel.open_id 字段** — 飞书用户关联
+- **KnowledgeDocModel.content 字段** — 知识文档内容存储
+- **飞书配置项** — `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_REDIRECT_URI`，生产 fail-fast
+
+### 变更
+- `/auth/login` 和 `/auth/refresh` 端点已删除，替换为飞书 OAuth 流程
+- `/chat/send`、`/chat/history`、`/chat/confirm`、`/chat/transfer` 全部挂 `get_current_user` 认证
+- 规则引擎 validators 新增 `meeting_room` 类型
+
+### 文档
+- 需求文档 V1.2 → V1.3：前置条件改为飞书授权登录
+- API 文档 V1.2 → V1.3：认证接口替换为飞书 OAuth
+- 技术方案 V1.3 → V1.4：新增飞书 OAuth 时序图
+- 部署与运维：配置管理补飞书配置项
+- 测试计划：认证用例改为飞书回调链路（mock）
+
+### 新增
 - 项目文档结构
 - 需求文档（PRD）
 - 技术方案设计
