@@ -4,7 +4,7 @@
 >
 > 在线文档：http://localhost:8000/docs （Swagger UI）
 >
-> 设计与实现细节见 [技术方案设计](../architecture/行政智能系统-技术方案设计.md) §4。
+> 设计与实现细节见 [技术方案设计](../architecture/行政智能系统-技术方案设计.md) §8。
 
 ---
 
@@ -24,7 +24,10 @@
 
 | 模块 | 接口 | 方法 | 说明 |
 |------|------|------|------|
-| 认证 | `/auth/login` | POST | 登录并签发 JWT |
+| 认证 | `/auth/login` | POST | 账号密码登录 |
+| 认证 | `/auth/sso/authorize` | GET | SSO 授权跳转 |
+| 认证 | `/auth/sso/callback` | GET | SSO 回调 |
+| 认证 | `/auth/logout` | POST | 登出 |
 | 认证 | `/auth/refresh` | POST | 刷新令牌 |
 | 认证 | `/auth/me` | GET | 当前用户信息 |
 | 对话 | `/chat/send` | POST | 发送消息 |
@@ -49,7 +52,7 @@
 | 管理 | `/admin/tools` | GET | 工具列表 |
 | 管理 | `/admin/tools/{tool_id}/config` | PUT | 更新工具配置 |
 | 管理 | `/admin/metrics` | GET | 系统指标 |
-| 系统 | `/api/health` | GET | 健康检查（不含 `/v1` 前缀） |
+| 系统 | `/health` | GET | 健康检查 |
 
 ---
 
@@ -112,7 +115,7 @@
 
 ## 三、认证接口
 
-### 3.1 登录
+### 3.1 账号密码登录
 
 **POST** `/auth/login`
 
@@ -137,11 +140,42 @@
 }
 ```
 
-### 3.2 刷新令牌
+### 3.2 SSO 登录
+
+**GET** `/auth/sso/authorize`
+
+重定向到企业 SSO 认证页面。用户授权后回调到 `/auth/sso/callback`。
+
+**GET** `/auth/sso/callback`
+
+SSO 回调端点，接收授权码并换取 Token。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `code` | string | SSO 授权码，必填 |
+| `state` | string | 防 CSRF 状态码，必填 |
+
+响应与 3.1 相同。
+
+### 3.3 登出
+
+**POST** `/auth/logout`
+
+使当前 Token 失效。需携带 `Authorization: Bearer <token>`。
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": null
+}
+```
+
+### 3.4 刷新令牌
 
 **POST** `/auth/refresh`（携带当前有效 Token）
 
-### 3.3 当前用户
+### 3.5 当前用户
 
 **GET** `/auth/me`
 
