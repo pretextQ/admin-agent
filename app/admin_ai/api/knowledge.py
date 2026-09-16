@@ -30,6 +30,7 @@ async def upload_knowledge(
         title=request.title,
         category=request.category,
         tags=request.tags,
+        content=request.content,
         created_by=current_user.get("user_id"),
     )
     db.add(doc)
@@ -40,7 +41,7 @@ async def upload_knowledge(
         "id": doc.id,
         "title": doc.title,
         "category": doc.category,
-        "status": "indexed",
+        "status": "pending_index",
     })
 
 
@@ -51,13 +52,31 @@ async def search_knowledge(
     db: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[dict]:
     """搜索知识库。"""
+    # TODO: 接入 RAG 向量检索，当前使用 ILIKE 关键词匹配作为占位
     query = select(KnowledgeDocModel).where(KnowledgeDocModel.is_active == True)
+
+    if request.query:
+        search_pattern = f"%{request.query}%"
+        query = query.where(
+            KnowledgeDocModel.title.ilike(search_pattern)
+            | KnowledgeDocModel.content.ilike(search_pattern)
+        )
+
     if request.category:
         query = query.where(KnowledgeDocModel.category == request.category)
-    query = query.limit(request.top_k)
 
+    query = query.limit(request.top_k)
     result = await db.execute(query)
     docs = result.scalars().all()
+
+    # 补充 tags 匹配
+    filtered = []
+    for d in docs:
+        if request.query and request.query not in (d.title or "") and request.query not in (d.content or ""):
+            if d.tags and request.query in d.tags:
+                filtered.append(d)
+        else:
+            filtered.append(d)
 
     return ApiResponse(data={
         "query": request.query,
@@ -68,9 +87,9 @@ async def search_knowledge(
                 "category": d.category,
                 "tags": d.tags,
             }
-            for d in docs
+            for d in filtered
         ],
-        "total": len(docs),
+        "total": len(filtered),
     })
 
 
