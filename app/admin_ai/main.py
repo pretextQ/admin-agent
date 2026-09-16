@@ -1,0 +1,66 @@
+# -*- coding: utf-8 -*-
+# Copyright 2026  Admin AI Team, All rights reserved.
+"""FastAPI 应用入口。"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.admin_ai.api.response import register_exception_handlers
+from app.admin_ai.api.routes import create_router
+from app.admin_ai.config import get_config
+from app.admin_ai.utils.logger import configure_logging
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理。"""
+    config = get_config()
+    configure_logging(config.LOG_LEVEL)
+    yield
+
+
+def create_app() -> FastAPI:
+    """创建 FastAPI 应用实例。"""
+    config = get_config()
+
+    app = FastAPI(
+        title=config.APP_NAME,
+        version=config.APP_VERSION,
+        docs_url="/docs" if config.DEBUG else None,
+        redoc_url="/redoc" if config.DEBUG else None,
+        lifespan=lifespan,
+    )
+
+    # CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # 异常处理器
+    register_exception_handlers(app)
+
+    # 路由
+    router = create_router()
+    app.include_router(router)
+
+    # WebSocket
+    from app.admin_ai.api.websocket import router as ws_router
+    app.include_router(ws_router)
+
+    # 健康检查
+    @app.get("/api/health")
+    async def health():
+        return {"status": "healthy", "version": config.APP_VERSION}
+
+    return app
+
+
+app = create_app()
