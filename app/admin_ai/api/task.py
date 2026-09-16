@@ -170,10 +170,19 @@ async def approve_task(
     db: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[dict]:
     """审批任务，仅当前审批人可操作。"""
+    # 校验 action
+    valid_actions = {"approve", "reject", "add_sign"}
+    if payload.action not in valid_actions:
+        raise BusinessError(code=40001, message=f"非法操作: {payload.action}，仅支持 {valid_actions}")
+
     result = await db.execute(select(TaskModel).where(TaskModel.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise BusinessError(code=40004, message="任务不存在")
+
+    # 校验任务状态
+    if task.status != TaskStatus.APPROVING:
+        raise BusinessError(code=40001, message=f"任务状态为 {task.status.value}，无法审批")
 
     # 查找当前审批人待审批记录
     approval_result = await db.execute(
@@ -187,21 +196,51 @@ async def approve_task(
     if not approval:
         raise BusinessError(code=40003, message="您不是当前审批人")
 
+    if payload.action == "add_sign":
+        # 加签：插入新的 pending ApprovalModel
+        if not payload.add_sign_user_id:
+            raise BusinessError(code=40001, message="加签必须指定 add_sign_user_id")
+        new_approval = ApprovalModel(
+            task_id=task_id,
+            approver_id=payload.add_sign_user_id,
+            step=approval.step + 1,
+            status="pending",
+        )
+        db.add(new_approval)
+        await db.commit()
+        return ApiResponse(data={
+            "id": task_id,
+            "action": "add_sign",
+            "status": task.status.value,
+            "new_approver_id": payload.add_sign_user_id,
+        })
+
     # 更新审批状态
     approval.action = ApprovalAction(payload.action)
     approval.status = payload.action
     approval.comment = payload.comment
     approval.decided_at = datetime.now(timezone.utc)
 
-    # 更新任务状态
-    if payload.action == "approve":
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.now(timezone.utc)
-    elif payload.action == "reject":
+    if payload.action == "reject":
         task.status = TaskStatus.FAILED
+    elif payload.action == "approve":
+        # 检查是否还有其他 pending 的审批记录
+        next_pending = await db.execute(
+            select(ApprovalModel).where(
+                ApprovalModel.task_id == task_id,
+                ApprovalModel.status == "pending",
+                ApprovalModel.id != approval.id,
+            )
+        )
+        if next_pending.scalar_one_or_none():
+            # 还有下一步审批，保持 APPROVING
+            pass
+        else:
+            # 所有审批完成
+            task.status = TaskStatus.COMPLETED
+            task.completed_at = datetime.now(timezone.utc)
 
     await db.commit()
-
     return ApiResponse(data={
         "id": task_id,
         "action": payload.action,
@@ -240,6 +279,8 @@ async def get_task_timeline(
     task = result.scalar_one_or_none()
     if not task:
         raise BusinessError(code=40004, message="任务不存在")
+    if task.user_id != current_user["user_id"]:
+        raise BusinessError(code=40003, message="无权访问该任务")
 
     approvals_result = await db.execute(
         select(ApprovalModel)
