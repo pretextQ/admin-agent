@@ -155,3 +155,86 @@ async def test_multi_turn_slot_filling_completes() -> None:
     assert "操作已完成" in body["content"]
     assert body.get("requires_action") is not True
     assert tool.calls, "补齐槽位后应调用工具"
+
+def _confirm_orchestrator(captured: list[Any]) -> AsyncMock:
+    """构造会记录上下文的高风险确认编排器桩。"""
+    orch = AsyncMock()
+
+    async def _process(message: str, context: Any, attachments: Any = None) -> dict[str, Any]:
+        captured.append(context)
+        if context.confirmed:
+            return {"content": "操作已完成"}
+        context.intent = "expense_request"
+        context.business_type = "expense"
+        context.slots = {"expense_type": "酒店", "amount": 500}
+        return {
+            "content": "请确认以下操作",
+            "card_data": {
+                "type": "confirmation",
+                "title": "请确认以下操作",
+                "data": {"expense_type": "酒店", "amount": 500},
+                "actions": ["confirm", "cancel"],
+                "warning": "此操作将产生重要影响，请仔细核对",
+            },
+            "requires_action": True,
+        }
+
+    orch.process.side_effect = _process
+    return orch
+
+
+async def test_confirm_resumes_pending_action() -> None:
+    """高风险操作确认后应携带原槽位恢复执行。"""
+    app = create_app()
+    captured: list[Any] = []
+    app.state.orchestrator = _confirm_orchestrator(captured)
+    app.state.state_store = InMemoryConversationStateStore()
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        send = await client.post(
+            "/api/v1/chat/send",
+            json={"message": "我要报销", "conversation_id": "conv-confirm"},
+            headers=headers,
+        )
+        assert send.json()["data"]["requires_action"] is True
+
+        confirm = await client.post(
+            "/api/v1/chat/confirm/conv-confirm",
+            json={"confirmed": True},
+            headers=headers,
+        )
+
+    assert confirm.json()["data"]["content"] == "操作已完成"
+    confirm_context = captured[-1]
+    assert confirm_context.confirmed is True
+    assert confirm_context.business_type == "expense"
+    assert confirm_context.slots == {"expense_type": "酒店", "amount": 500}
+
+
+async def test_confirm_false_cancels_without_executing() -> None:
+    """取消确认不执行工具，并清除待确认状态。"""
+    app = create_app()
+    captured: list[Any] = []
+    orchestrator = _confirm_orchestrator(captured)
+    app.state.orchestrator = orchestrator
+    app.state.state_store = InMemoryConversationStateStore()
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post(
+            "/api/v1/chat/send",
+            json={"message": "我要报销", "conversation_id": "conv-cancel"},
+            headers=headers,
+        )
+        confirm = await client.post(
+            "/api/v1/chat/confirm/conv-cancel",
+            json={"confirmed": False},
+            headers=headers,
+        )
+
+    assert "已取消" in confirm.json()["data"]["content"]
+    assert orchestrator.process.await_count == 1
+

@@ -92,26 +92,49 @@ async def get_conversation_history(
     return ApiResponse(data={"conversation_id": conversation_id, "messages": [], "total": 0})
 
 
-@router.post("/confirm/{task_id}", response_model=ApiResponse[ChatResponse])
+@router.post("/confirm/{conversation_id}", response_model=ApiResponse[ChatResponse])
 async def confirm_action(
-    task_id: str,
+    conversation_id: str,
     payload: ConfirmRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> ApiResponse[ChatResponse]:
-    """确认或取消高风险操作。"""
+    """确认或取消高风险操作。
+
+    从会话状态中恢复待确认操作的业务类型与槽位，确认后携带 `confirmed=True`
+    恢复执行；取消则清除待确认状态且不调用工具。
+    """
     orchestrator = request.app.state.orchestrator
+    store = _get_state_store(request)
+    state = await store.get(conversation_id)
+
+    if state is None or not state.pending_confirmation:
+        return ApiResponse(data=ChatResponse(
+            conversation_id=conversation_id,
+            message_id=str(uuid.uuid4()),
+            content="当前没有待确认的操作。",
+        ))
+
+    if not payload.confirmed:
+        await store.clear(conversation_id)
+        return ApiResponse(data=ChatResponse(
+            conversation_id=conversation_id,
+            message_id=str(uuid.uuid4()),
+            content="已取消操作。",
+        ))
+
     context = AgentContext(
         user_id=current_user["user_id"],
-        conversation_id=task_id,
-        confirmed=payload.confirmed,
+        conversation_id=conversation_id,
+        intent=state.intent,
+        business_type=state.business_type,
+        slots=dict(state.slots),
+        confirmed=True,
     )
-    result = await orchestrator.process(
-        "确认操作" if payload.confirmed else "取消操作",
-        context,
-    )
+    result = await orchestrator.process("确认操作", context)
+    await store.clear(conversation_id)
     return ApiResponse(data=ChatResponse(
-        conversation_id=task_id,
+        conversation_id=conversation_id,
         message_id=str(uuid.uuid4()),
         content=result.get("content", ""),
         card_data=result.get("card_data"),
