@@ -136,3 +136,76 @@ async def test_normal_flow_tool_error_transfers_with_task_data(
     assert result.get("transfer_to_human") is True
     assert result.get("transfer_task_data") is not None
     assert result["transfer_task_data"]["business_type"] == "leave"
+
+@pytest.mark.asyncio
+async def test_awaiting_slots_skips_intent_recognition(orchestrator: Orchestrator) -> None:
+    """续填槽位时不重新识别意图，直接执行工具。"""
+    orchestrator.slot_extractor.extract.return_value = {}
+    orchestrator.slot_extractor.check_completeness.return_value = []
+    mock_tool = AsyncMock()
+    mock_tool.execute.return_value = ToolResult.text("ok")
+    orchestrator.tool_registry.get_tool.return_value = mock_tool
+    validation = MagicMock()
+    validation.passed = True
+    validation.errors = []
+    orchestrator.rule_engine.validate.return_value = validation
+
+    context = AgentContext(
+        user_id="u1",
+        conversation_id="c1",
+        business_type="leave",
+        intent="leave_request",
+        awaiting_slots=True,
+        slots={"leave_type": "年假", "start_date": "2026-09-20", "end_date": "2026-09-21"},
+    )
+    result = await orchestrator.process("年假 2026-09-20 到 2026-09-21", context)
+
+    orchestrator.intent_recognizer.recognize.assert_not_called()
+    assert context.state == AgentState.COMPLETED
+    assert "操作已完成" in result["content"]
+    assert context.awaiting_slots is False
+
+
+@pytest.mark.asyncio
+async def test_missing_slots_sets_awaiting_slots(orchestrator: Orchestrator) -> None:
+    """槽位缺失时返回追问并标记 awaiting_slots。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "leave_request",
+        "confidence": 0.95,
+    }
+    orchestrator.slot_extractor.extract.return_value = {}
+    orchestrator.slot_extractor.check_completeness.return_value = ["start_date"]
+
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("我要请假", context)
+
+    assert result.get("requires_action") is True
+    assert context.awaiting_slots is True
+    assert "开始日期" in result["content"]
+    assert result.get("missing_slots") == ["start_date"]
+
+
+@pytest.mark.asyncio
+async def test_confirmation_card_uses_spec_fields(orchestrator: Orchestrator) -> None:
+    """高风险确认卡片符合 API 规格字段。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "expense_request",
+        "confidence": 0.95,
+    }
+    orchestrator.slot_extractor.extract.return_value = {}
+    orchestrator.slot_extractor.check_completeness.return_value = []
+    validation = MagicMock()
+    validation.passed = True
+    validation.errors = []
+    orchestrator.rule_engine.validate.return_value = validation
+
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("我要报销 500 元", context)
+
+    card = result["card_data"]
+    assert card["type"] == "confirmation"
+    assert card["data"] == context.slots
+    assert card["title"]
+    assert card["warning"]
+    assert card["actions"] == ["confirm", "cancel"]
+    assert result["requires_action"] is True
