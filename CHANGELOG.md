@@ -5,6 +5,26 @@
 
 ---
 
+## [Unreleased]
+
+### 新增
+- **LLM 客户端工厂** `app/admin_ai/core/llm.py` — 按 `OPENAI_API_KEY` 构建 OpenAI 兼容客户端；未配置或依赖缺失时降级为规则回退
+- **会话状态存储** `ConversationStateStore`（内存 / Redis 双实现）— 按 conversation_id 保存意图、业务类型、槽位、待确认状态
+
+### 修复
+- **多轮对话不再丢失状态**：`/chat/send` 每轮恢复并写回会话状态，槽位补全可跨请求完成
+- **有 LLM 时不再空转**：修复 `SlotExtractor` 在传入 LLM 客户端时直接返回已有槽位（不抽取）的问题
+- **编排器支持槽位续填**：正在补全槽位时跳过意图识别，避免把补充信息误判为未知意图而转人工
+- **高风险确认可恢复**：`/chat/confirm/{conversation_id}` 基于会话状态恢复业务类型与槽位，取消不执行工具
+- **前端 OAuth 回调**：先落 token 再调用 `/auth/me`，修复回调必然 401 跳回登录页的问题
+
+### 变更
+- 确认卡片 `card_data` 对齐 API 规格第 10 节：`{type, title, data, actions, warning}`
+- `pytest` 默认仅运行非集成用例（`-m "not integration and not e2e and not llm"`），集成用例按需显式选择
+- 修正过期的健康检查用例：认证上线后 `/chat/send` 无 Token 应返回 401
+
+---
+
 ## [0.1.0] - 2026-09-16
 
 ### 新增
