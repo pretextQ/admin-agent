@@ -24,15 +24,15 @@ class TestHealthAPI:
         assert data["status"] == "healthy"
         assert data["version"] == "0.1.0"
 
-    async def test_chat_send_endpoint(self) -> None:
+    async def test_chat_send_requires_auth(self) -> None:
+        """认证上线后，未携带 Token 的对话请求返回 401。"""
         app = create_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post("/api/v1/chat/send", json={"message": "你好"})
-        assert response.status_code == 200
+        assert response.status_code == 401
         data = response.json()
-        assert data["code"] == 0
-        assert "conversation_id" in data["data"]
+        assert data["code"] == 40002
 
     @pytest.mark.integration
     async def test_tasks_my_endpoint(self) -> None:

@@ -154,7 +154,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
-addopts = "-v --tb=short --strict-markers --disable-warnings"
+# 默认只跑不依赖外部服务的用例；集成/端到端/真实 LLM 用例按需用 -m 显式选择
+addopts = '-v --tb=short --strict-markers --disable-warnings -m "not integration and not e2e and not llm"'
 # 与 --strict-markers 配套；未在此注册的 marker 会导致测试失败
 markers = [
     "slow: 慢速测试",
