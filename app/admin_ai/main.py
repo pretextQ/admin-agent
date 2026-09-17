@@ -17,6 +17,7 @@ from app.admin_ai.core.agent.dialog import DialogManager
 from app.admin_ai.core.agent.intent import IntentRecognizer
 from app.admin_ai.core.agent.orchestrator import Orchestrator
 from app.admin_ai.core.agent.slot import SlotExtractor
+from app.admin_ai.core.llm import build_llm_client
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.registry import init_tools
 from app.admin_ai.utils.logger import configure_logging
@@ -40,9 +41,12 @@ async def lifespan(app: FastAPI):
     app.state.rule_engine = rule_engine
     logger.info("规则引擎初始化完成")
 
+    # 初始化 LLM 客户端（未配置密钥时降级为规则回退）
+    llm_client = build_llm_client(config)
+
     # 初始化编排器
-    intent_recognizer = IntentRecognizer()
-    slot_extractor = SlotExtractor()
+    intent_recognizer = IntentRecognizer(llm_client=llm_client, model=config.LLM_MODEL)
+    slot_extractor = SlotExtractor(llm_client=llm_client, model=config.LLM_MODEL)
     dialog_manager = DialogManager()
     orchestrator = Orchestrator(
         intent_recognizer=intent_recognizer,

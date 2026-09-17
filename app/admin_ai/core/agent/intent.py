@@ -24,8 +24,9 @@ VALID_INTENTS = {
 class IntentRecognizer:
     """意图识别器。"""
 
-    def __init__(self, llm_client: Any = None) -> None:
+    def __init__(self, llm_client: Any = None, model: str = "gpt-4o-mini") -> None:
         self._llm = llm_client
+        self._model = model
 
     async def recognize(
         self,
@@ -38,7 +39,7 @@ class IntentRecognizer:
 
         try:
             response = await self._llm.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self._model,
                 messages=[
                     {"role": "system", "content": INTENT_PROMPT},
                     {"role": "user", "content": message},
