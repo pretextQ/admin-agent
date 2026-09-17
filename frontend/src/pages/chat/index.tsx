@@ -57,7 +57,7 @@ export default function ChatPage() {
         .reverse()
         .find((m) => m.role === "assistant" && m.requires_action);
 
-      if (!lastAction) return;
+      if (!lastAction || !conversationId) return;
 
       setTyping(true);
       try {

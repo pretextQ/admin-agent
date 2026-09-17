@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Spin } from "@douyinfe/semi-ui";
 import { useAuthStore } from "@/stores";
@@ -10,6 +10,22 @@ export default function CallbackPage() {
   const [error, setError] = useState<string | null>(null);
   const login = useAuthStore((s) => s.login);
 
+  // 必须先落 token 再取用户信息：axios 拦截器从 localStorage 读取 token，
+  // 否则 getMe 不带 Authorization 头会 401。
+  const completeLogin = useCallback(
+    async (token: string) => {
+      login(token, { user_id: "", employee_id: "", role: "employee" });
+      try {
+        const userInfo = await authApi.getMe();
+        login(token, userInfo);
+      } catch {
+        // 已持有可用 token，用户信息获取失败不阻断登录
+      }
+      navigate("/", { replace: true });
+    },
+    [login, navigate]
+  );
+
   useEffect(() => {
     const jwt = searchParams.get("jwt");
     const code = searchParams.get("code");
@@ -17,28 +33,20 @@ export default function CallbackPage() {
 
     async function handleCallback() {
       if (jwt) {
-        try {
-          const userInfo = await authApi.getMe();
-          login(jwt, userInfo);
-          navigate("/", { replace: true });
-          return;
-        } catch {
-          setError("登录失败，请重试");
-          return;
-        }
+        await completeLogin(jwt);
+        return;
       }
 
       if (code && state) {
         try {
+          const base = import.meta.env.VITE_API_BASE_URL || "/api/v1";
           const resp = await fetch(
-            `${import.meta.env.VITE_API_BASE_URL}/auth/feishu/callback?code=${code}&state=${state}`,
+            `${base}/auth/feishu/callback?code=${code}&state=${state}`,
             { redirect: "follow" }
           );
           const data = await resp.json();
           if (data.code === 0 && data.data?.access_token) {
-            const userInfo = await authApi.getMe();
-            login(data.data.access_token, userInfo);
-            navigate("/", { replace: true });
+            await completeLogin(data.data.access_token);
           } else {
             setError(data.message || "登录失败");
           }
@@ -52,7 +60,7 @@ export default function CallbackPage() {
     }
 
     handleCallback();
-  }, [searchParams, navigate, login]);
+  }, [searchParams, completeLogin]);
 
   if (error) {
     return (

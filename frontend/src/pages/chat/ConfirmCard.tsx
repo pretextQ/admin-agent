@@ -6,20 +6,11 @@ interface ConfirmCardProps {
   onCancel: () => void;
 }
 
+// 卡片字段与 docs/api/api-spec.md 第 10 节对齐：{ type, title, data, actions, warning }
 export default function ConfirmCard({ cardData, onConfirm, onCancel }: ConfirmCardProps) {
-  const businessType = cardData.business_type as string;
-  const slots = (cardData.slots as Record<string, string>) || {};
-  const warning = (cardData.warning as string) || "请确认以下操作";
-
-  const typeLabels: Record<string, string> = {
-    leave: "请假申请",
-    expense: "报销申请",
-    travel: "差旅申请",
-    meeting_room: "会议室预定",
-    material: "物资领用",
-    seal: "用印申请",
-    certificate: "证明开具",
-  };
+  const title = (cardData.title as string) || "请确认以下操作";
+  const data = (cardData.data as Record<string, unknown>) || {};
+  const warning = (cardData.warning as string) || "";
 
   return (
     <Card
@@ -30,12 +21,12 @@ export default function ConfirmCard({ cardData, onConfirm, onCancel }: ConfirmCa
         maxWidth: 320,
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>
-        {typeLabels[businessType] || businessType}
-      </div>
-      <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>{warning}</div>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>{title}</div>
+      {warning && (
+        <div style={{ fontSize: 13, color: "#b45309", marginBottom: 12 }}>{warning}</div>
+      )}
       <div style={{ fontSize: 13, marginBottom: 12 }}>
-        {Object.entries(slots).map(([key, value]) => (
+        {Object.entries(data).map(([key, value]) => (
           <div key={key} style={{ marginBottom: 4 }}>
             <span style={{ color: "#999" }}>{key}：</span>
             <span>{String(value)}</span>
