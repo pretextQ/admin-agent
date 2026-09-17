@@ -11,9 +11,42 @@ from fastapi import APIRouter, Depends, Request
 from app.admin_ai.api.response import ApiResponse
 from app.admin_ai.api.schemas import ChatRequest, ChatResponse, ConfirmRequest, TransferRequest
 from app.admin_ai.core.agent.orchestrator import AgentContext
+from app.admin_ai.core.agent.state_store import (
+    ConversationState,
+    ConversationStateStore,
+    get_default_state_store,
+)
 from app.admin_ai.core.auth.deps import get_current_user
 
 router = APIRouter(prefix="/chat", tags=["对话"])
+
+
+def _get_state_store(request: Request) -> ConversationStateStore:
+    """获取会话状态存储；未在 lifespan 中初始化时回退到默认内存实现。"""
+    store = getattr(request.app.state, "state_store", None)
+    if store is None:
+        store = get_default_state_store()
+    return store
+
+
+async def _persist_state(
+    store: ConversationStateStore,
+    conversation_id: str,
+    context: AgentContext,
+    result: dict,
+) -> None:
+    """把本轮上下文写回会话状态。"""
+    card = result.get("card_data") or {}
+    state = ConversationState(
+        intent=context.intent,
+        business_type=context.business_type,
+        slots=context.slots,
+        awaiting_slots=context.awaiting_slots,
+        pending_confirmation=bool(
+            result.get("requires_action") and card.get("type") == "confirmation"
+        ),
+    )
+    await store.save(conversation_id, state)
 
 
 @router.post("/send", response_model=ApiResponse[ChatResponse])
@@ -24,12 +57,22 @@ async def send_message(
 ) -> ApiResponse[ChatResponse]:
     """发送消息，创建或继续会话。"""
     orchestrator = request.app.state.orchestrator
+    store = _get_state_store(request)
     conversation_id = payload.conversation_id or str(uuid.uuid4())
+
+    # 恢复该会话已收集的意图/业务类型/槽位，实现多轮补全
+    state = await store.get(conversation_id) or ConversationState()
     context = AgentContext(
         user_id=current_user["user_id"],
         conversation_id=conversation_id,
+        intent=state.intent,
+        business_type=state.business_type,
+        slots=dict(state.slots),
+        awaiting_slots=state.awaiting_slots,
     )
     result = await orchestrator.process(payload.message, context, payload.attachments)
+    await _persist_state(store, conversation_id, context, result)
+
     return ApiResponse(data=ChatResponse(
         conversation_id=conversation_id,
         message_id=str(uuid.uuid4()),
