@@ -17,6 +17,7 @@ from app.admin_ai.core.agent.dialog import DialogManager
 from app.admin_ai.core.agent.intent import IntentRecognizer
 from app.admin_ai.core.agent.orchestrator import Orchestrator
 from app.admin_ai.core.agent.slot import SlotExtractor
+from app.admin_ai.core.agent.state_store import build_state_store
 from app.admin_ai.core.llm import build_llm_client
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.registry import init_tools
@@ -57,6 +58,10 @@ async def lifespan(app: FastAPI):
     )
     app.state.orchestrator = orchestrator
     logger.info("编排器初始化完成")
+
+    # 初始化会话状态存储（Redis 不可用时回退进程内）
+    app.state.state_store = build_state_store(config.REDIS_URL)
+    logger.info("会话状态存储初始化完成")
 
     yield
 
