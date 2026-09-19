@@ -228,32 +228,27 @@
 
 **GET** `/chat/history/{conversation_id}`
 
-查询参数（遵循 §2.3 分页规范）：
+无分页参数，一次返回该会话全部消息（按时间正序）。
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | int | 1 | 页码 |
-| `page_size` | int | 50 | 每页数量 |
-
-响应（分页字段统一为 `items/total/page/page_size`）：
+响应：
 
 ```json
 {
     "code": 0,
     "message": "success",
     "data": {
-        "items": [
-            {"id": "msg_001", "role": "user", "content": "你好", "created_at": "..."},
-            {"id": "msg_002", "role": "assistant", "content": "您好，请问有什么可以帮您？", "created_at": "..."}
+        "conversation_id": "conv_001",
+        "messages": [
+            {"id": "msg_001", "role": "user", "content": "你好", "card_data": null, "requires_action": false, "created_at": "..."},
+            {"id": "msg_002", "role": "assistant", "content": "您好", "card_data": null, "requires_action": false, "created_at": "..."}
         ],
-        "total": 10,
-        "page": 1,
-        "page_size": 50
+        "total": 2
     }
 }
 ```
 
-仅可访问本人会话；越权返回 `40003`。
+`card_data` / `requires_action` 从消息 `meta` 还原，供前端直接渲染确认卡片。
+会话不存在返回 `40004`；仅可访问本人会话，越权返回 `40003`。
 
 ### 4.3 确认高风险操作
 
@@ -267,6 +262,10 @@
 ```
 
 `confirmed=false` 表示取消。**注意**：该参数位于请求体中，不是查询参数。
+
+> **实现说明（D-01 待定项）**：当前实现以 `conversation_id` 定位待确认操作
+> （从会话状态恢复槽位，路径为 `/chat/confirm/{conversation_id}`），规格中的
+> `task_id` 为目标形态（落 TaskModel 后切换）。仅会话属主可操作，越权返回 `40003`。
 
 ### 4.4 转人工
 
@@ -361,7 +360,17 @@
 
 ### 6.3 任务详情
 
-**GET** `/tasks/{task_id}` —— 含业务数据、当前审批人与审批链；越权返回 `40003`。
+**GET** `/tasks/{task_id}` —— 含业务数据、当前审批人与审批链。
+
+响应在基础字段外包含：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `can_approve` | bool | 当前用户是否为该任务的待审批人 |
+| `is_owner` | bool | 当前用户是否为任务属主 |
+| `approvals[]` | array | 审批链（含 `add_sign_user_id`） |
+
+访问权限：任务属主或当前待审批人可见；其他用户返回 `40003`。
 
 ### 6.4 审批任务
 
@@ -377,15 +386,15 @@
 
 `action` 取值：`approve` / `reject` / `add_sign`。仅当前审批人可操作，否则返回 `40003`。
 
+- `add_sign`：原审批记录关闭（`status=done`），并生成被加签人的新 `pending` 记录；禁止加签给自己（`40001`）
+- 全部审批节点通过后任务置 `completed`；`reject` 置 `failed`
+
 ### 6.5 取消任务
 
 **POST** `/tasks/{task_id}/cancel`
 
-```json
-{
-    "reason": "不再需要"
-}
-```
+仅任务属主可取消，且任务需处于 `pending` / `processing` / `approving` 状态；
+终态任务（completed/failed/cancelled）取消返回 `40001`。
 
 ### 6.6 任务时间线
 

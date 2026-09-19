@@ -69,14 +69,14 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 
 | 层级 | 技术选型 | 说明 |
 |------|----------|------|
-| 框架 | React 18 + TypeScript | 飞书 H5 应用 |
-| 构建 | Vite 5 | 开发启动 <1s，HMR 极快 |
+| 框架 | React 19 + TypeScript | 飞书 H5 应用 |
+| 构建 | Vite 8 | 开发启动 <1s，HMR 极快 |
 | UI 库 | Semi Design | 字节出品，飞书视觉语言一致 |
 | 状态管理 | Zustand | 轻量（1KB），零 boilerplate |
-| HTTP | Axios + TanStack Query | 拦截器 + 自动缓存/重试 |
-| 路由 | React Router 6 | 标准方案，支持懒加载 |
+| HTTP | Axios | 拦截器 + 统一信封解包 |
+| 路由 | React Router 7 | 标准方案，支持懒加载 |
 | 包管理 | pnpm | 快速、磁盘友好 |
-| 代码质量 | ESLint + Vitest | 格式、测试 |
+| 代码质量 | oxlint + Vitest | 格式、测试 |
 
 ---
 
@@ -129,7 +129,9 @@ admin-ai-agent/
 │   └── versions/                           001_initial_tables
 │
 ├── scripts/                                运维脚本
-│   └── seed_admin.py                       管理员账号初始化
+│   ├── seed_admin.py                       管理员账号初始化
+│   ├── dev_stubs.py                        下游微服务开发桩（8001/8002/8003）
+│   └── e2e_smoke.py                        端到端冒烟脚本
 │
 ├── tests/                                  测试
 │   ├── conftest.py                         共享 fixture 与 marker
@@ -220,8 +222,12 @@ source .venv/bin/activate        # Linux / macOS
 # 安装依赖
 uv pip install -r requirements-dev.txt
 
-# 执行数据库迁移
+# 准备数据库（需 PostgreSQL / Redis 已启动）
 alembic upgrade head
+python scripts/seed_admin.py     # 创建 admin001 管理员
+
+# 启动下游开发桩（8001=OA，8002=财务，8003=物资；另开终端）
+python scripts/dev_stubs.py
 
 # 启动开发服务器
 uvicorn app.admin_ai.main:app --reload --host 0.0.0.0 --port 8000
@@ -297,7 +303,7 @@ mypy app/
 ### 测试
 
 ```bash
-# 全部测试
+# 全部单元测试（默认跳过需真实依赖的集成用例）
 pytest tests/admin_ai -q
 
 # 带覆盖率（整体门槛 80%）
@@ -309,6 +315,16 @@ pytest tests/admin_ai/test_core/test_intent.py -v
 # 跳过慢测试
 pytest -m "not slow"
 ```
+
+### 端到端冒烟
+
+前置：PostgreSQL / Redis / 开发桩 / API 均已启动（见"快速开始"第 3 步）。
+
+```bash
+PYTHONPATH=. python scripts/e2e_smoke.py
+```
+
+脚本覆盖 9 步：dev-login → 请假（一步补全槽位 → 工具执行 → 任务自动完成）→ 报销（确认卡片 → 确认执行 → 生成管理员审批链）→ 待审批列表 → 审批通过 → 会话历史落库。
 
 ### 数据库迁移
 
@@ -387,8 +403,17 @@ alembic downgrade -1
 - [x] 对话接口接上编排器（chat.py → orchestrator.process()）
 - [x] 审批多级链（多步审批 / 加签 / 状态校验）
 - [x] 飞书 OAuth 登录（授权码模式 / dev-login）
-- [x] 单元测试（全部通过）
-- [ ] 集成测试与联调
+- [x] 多轮状态存储 + 槽位续填 + 高风险确认闭环
+- [x] 对话/消息/任务落库 + `/chat/history` 真实历史
+- [x] 审计/TraceId 中间件启用，写操作落 `audit_logs`
+- [x] RAG 制度问答闭环（Chroma 服务/嵌入式双模式 + 超时降级）
+- [x] 下游开发桩 + 端到端冒烟（9 步全通过）
+- [x] 单元测试（91 个通过）
+- [ ] LLM 回复生成接入（当前为模板拼装，LLM 仅用于意图/槽位）
+- [ ] 真实 OA 审批回调（`/approvals/callback`）与 Celery 轮询
+- [ ] WebSocket 实时对话
+- [ ] Prometheus 指标接入
+- [ ] Docker 部署文件落地
 - [ ] 上线部署
 
 ### 前端
@@ -401,8 +426,8 @@ alembic downgrade -1
 - [x] 对话页面（消息收发 + 确认卡片 + 转人工）
 - [x] 任务页面（列表 + 筛选 + 详情 + 时间线）
 - [x] 布局组件 + 路由配置 + ErrorBoundary
-- [x] 生产构建通过（595KB JS + 236KB CSS）
-- [ ] 审批操作（同意/驳回/加签）— 下迭代
+- [x] 生产构建通过
+- [x] 审批操作（同意/驳回）+ 任务取消 + 会话历史恢复
 - [ ] WebSocket 实时对话 — 下迭代
 - [ ] E2E 测试
 - [ ] 前端部署
