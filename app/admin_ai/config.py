@@ -56,6 +56,8 @@ class Settings(BaseSettings):
 
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8005
+    # 本地嵌入式持久化目录：Chroma 服务不可达时使用，无需独立部署
+    CHROMA_PERSIST_PATH: str = "data/chroma"
 
     OA_SERVICE_URL: str = "http://localhost:8001"
     FINANCE_SERVICE_URL: str = "http://localhost:8002"

@@ -18,6 +18,28 @@ from app.admin_ai.core.tools.registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
+
+def compose_policy_answer(docs: list[dict[str, Any]]) -> str:
+    """把 RAG 检索结果拼装为带引用来源的制度问答回复。
+
+    未接回复生成 LLM 前，先用模板保证回答可溯源。
+    """
+    lines = ["根据知识库检索，为您找到以下相关制度内容："]
+    sources: list[str] = []
+    for i, doc in enumerate(docs, 1):
+        meta = doc.get("metadata") or {}
+        title = meta.get("title") or "未命名文档"
+        content = (doc.get("content") or "").strip()
+        excerpt = content[:200] + ("…" if len(content) > 200 else "")
+        lines.append(f"{i}. 《{title}》：{excerpt}")
+        source_uri = meta.get("source_uri")
+        if source_uri:
+            sources.append(source_uri)
+    if sources:
+        lines.append(f"来源：{'；'.join(dict.fromkeys(sources))}")
+    return "\n".join(lines)
+
+
 # 意图到业务类型的映射
 INTENT_TO_BUSINESS = {
     "leave_request": "leave",
@@ -106,12 +128,14 @@ class Orchestrator:
         dialog_manager: DialogManager,
         rule_engine: RuleEngine,
         tool_registry: ToolRegistry,
+        retriever: Any = None,
     ) -> None:
         self.intent_recognizer = intent_recognizer
         self.slot_extractor = slot_extractor
         self.dialog_manager = dialog_manager
         self.rule_engine = rule_engine
         self.tool_registry = tool_registry
+        self.retriever = retriever
 
     async def process(
         self,
@@ -141,9 +165,16 @@ class Orchestrator:
                     context.state = AgentState.COMPLETED
                     return {"content": "你好，我是行政助手，请问有什么可以帮您？"}
 
-                # 3. 制度查询走 RAG
+                # 3. 制度查询走 RAG：检索到则返回带引用的回答，否则交由上层处理
                 if context.intent == "policy_query":
                     context.state = AgentState.COMPLETED
+                    if self.retriever is not None:
+                        docs = await self.retriever.retrieve(user_message, top_k=3)
+                        if docs:
+                            return {
+                                "content": compose_policy_answer(docs),
+                                "rag_sources": [d.get("metadata") or {} for d in docs],
+                            }
                     return {"content": "正在为您查询相关制度...", "needs_rag": True}
 
                 # 4. 状态查询

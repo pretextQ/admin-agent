@@ -21,9 +21,40 @@ from app.admin_ai.core.agent.state_store import (
 )
 from app.admin_ai.core.auth.deps import get_current_user
 from app.admin_ai.db.database import get_db_session
-from app.admin_ai.db.models import ConversationModel, ConversationStatus, MessageModel, MessageRole
+from app.admin_ai.db.models import (
+    ConversationModel,
+    ConversationStatus,
+    MessageModel,
+    MessageRole,
+    TaskModel,
+    TaskType,
+)
 
 router = APIRouter(prefix="/chat", tags=["对话"])
+
+# 业务类型 -> 任务标题用词（与 TaskType 取值对应）
+TASK_LABELS = {
+    "leave": "请假",
+    "expense": "报销",
+    "travel": "差旅",
+    "meeting_room": "会议室预定",
+    "vehicle": "车辆预定",
+    "material": "物资领用",
+    "asset": "资产领用/归还",
+    "seal": "用印",
+    "certificate": "证明开具",
+    "onboarding": "入离职办理",
+}
+# 与编排器 HIGH_RISK_TYPES 对应的高风险业务
+HIGH_RISK_BUSINESS = {"expense", "seal"}
+
+
+def _build_task_title(business_type: str, slots: dict[str, Any]) -> str:
+    """根据业务类型与槽位生成任务标题。"""
+    label = TASK_LABELS.get(business_type, business_type)
+    hint = slots.get("leave_type") or slots.get("expense_type") or slots.get("item_name") \
+        or slots.get("certificate_type") or slots.get("asset_name")
+    return f"{label}（{hint}）" if hint else label
 
 
 def _get_state_store(request: Request) -> ConversationStateStore:
@@ -93,6 +124,25 @@ async def _save_chat_turn(
         content=result.get("content", ""),
         meta=meta or None,
     ))
+
+    # 工具执行成功时创建任务记录，供任务列表/详情/时间线展示
+    business_type = result.get("task_type")
+    if business_type:
+        try:
+            task_type = TaskType(business_type)
+        except ValueError:
+            task_type = None
+        if task_type:
+            slots = result.get("slots") or {}
+            db.add(TaskModel(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                type=task_type,
+                title=_build_task_title(business_type, slots),
+                data=slots,
+                risk_level="high" if business_type in HIGH_RISK_BUSINESS else "low",
+                requires_confirmation=business_type in HIGH_RISK_BUSINESS,
+            ))
 
 
 @router.post("/send", response_model=ApiResponse[ChatResponse])

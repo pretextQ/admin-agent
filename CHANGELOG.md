@@ -9,6 +9,9 @@
 
 ### 新增
 - **对话落库**：`/chat/send`、`/chat/confirm` 写入 `conversations`/`messages` 表；`/chat/history/{id}` 返回真实历史（含卡片还原），仅会话属主可查；前端聊天页进入时自动恢复历史消息
+- **任务落库**：工具执行成功后自动创建 `tasks` 记录（标题按业务与槽位生成，报销/用印标记 high risk），任务列表/详情/时间线有了真实数据来源
+- **RAG 制度问答闭环**：编排器接入检索器，policy_query 返回带引用来源的回答；知识上传分片向量化入库（chunk_count 回填）；`/knowledge/search` 向量检索优先、ILIKE 兜底；文档删除同步清理向量分片；Chroma 服务/本地嵌入式双模式，调用超时自动降级
+- **下游服务开发桩** `scripts/dev_stubs.py`：8001/8002/8003 模拟 OA/财务/物资系统，本地即可端到端联调工具链路
 - **审计落库**：审计中间件对 POST/PUT/DELETE 请求写入 `audit_logs`（动作、用户、请求体、IP、UA、结论），失败仅告警不阻断业务；`GET /admin/audit-logs` 改为真实查询
 - **管理后台真实数据**：`/admin/dashboard`、`/admin/metrics` 基于数据库统计（今日会话/任务、转人工率、完成率、高频意图），`/admin/tools` 读取工具注册中心
 - **安全测试**：新增 admin 鉴权（401/403）、会话属主校验、任务取消状态校验、审计落库与 TraceId 中间件共 19 个用例
@@ -16,6 +19,7 @@
 - **会话状态存储** `ConversationStateStore`（内存 / Redis 双实现）— 按 conversation_id 保存意图、业务类型、槽位、待确认状态
 
 ### 修复
+- **知识库搜索 tags 匹配生效**：原实现在 `limit()` 之后过滤且候选集不含 tags-only 文档（死逻辑），现放大候选窗口并补独立 tags 扫描
 - **`/admin/*` 接口补齐鉴权**（原 5 个端点完全无鉴权且返回硬编码数据）：全部挂 `get_admin_user` 依赖
 - **高风险确认增加会话属主校验**：`ConversationState` 记录 `user_id`，`/chat/send` 与 `/chat/confirm` 均拒绝非属主操作，杜绝代他人确认报销/用印的风险
 - **任务取消增加状态校验**：仅 pending/processing/approving 可取消，已完成/已失败/已取消任务返回 40001

@@ -65,6 +65,7 @@ class KnowledgeUploadRequest(BaseModel):
     category: str
     tags: list[str] = []
     content: Optional[str] = None
+    source_uri: Optional[str] = None
 
 
 class KnowledgeSearchRequest(BaseModel):

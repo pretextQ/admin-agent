@@ -19,6 +19,7 @@ from app.admin_ai.core.agent.orchestrator import Orchestrator
 from app.admin_ai.core.agent.slot import SlotExtractor
 from app.admin_ai.core.agent.state_store import build_state_store
 from app.admin_ai.core.llm import build_llm_client
+from app.admin_ai.core.rag.retriever import build_retriever
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.registry import init_tools
 from app.admin_ai.middleware.audit import AuditMiddleware
@@ -47,6 +48,10 @@ async def lifespan(app: FastAPI):
     # 初始化 LLM 客户端（未配置密钥时降级为规则回退）
     llm_client = build_llm_client(config)
 
+    # 初始化 RAG 检索器（Chroma 服务优先，回退本地嵌入式）
+    retriever = build_retriever(config)
+    app.state.retriever = retriever
+
     # 初始化编排器
     intent_recognizer = IntentRecognizer(llm_client=llm_client, model=config.LLM_MODEL)
     slot_extractor = SlotExtractor(llm_client=llm_client, model=config.LLM_MODEL)
@@ -57,6 +62,7 @@ async def lifespan(app: FastAPI):
         dialog_manager=dialog_manager,
         rule_engine=rule_engine,
         tool_registry=tool_registry,
+        retriever=retriever,
     )
     app.state.orchestrator = orchestrator
     logger.info("编排器初始化完成")

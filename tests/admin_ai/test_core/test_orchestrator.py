@@ -209,3 +209,73 @@ async def test_confirmation_card_uses_spec_fields(orchestrator: Orchestrator) ->
     assert card["warning"]
     assert card["actions"] == ["confirm", "cancel"]
     assert result["requires_action"] is True
+
+
+@pytest.mark.asyncio
+async def test_policy_query_without_retriever_flags_rag(orchestrator: Orchestrator) -> None:
+    """未接入检索器时制度查询仍返回 needs_rag 标记。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "policy_query",
+        "confidence": 0.9,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("报销标准是什么", context)
+
+    assert result.get("needs_rag") is True
+    assert context.state == AgentState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_policy_query_with_retriever_returns_citations(
+    orchestrator: Orchestrator,
+) -> None:
+    """接入检索器后制度查询返回带引用来源的回答。"""
+    orchestrator.retriever = AsyncMock()
+    orchestrator.retriever.retrieve.return_value = [
+        {
+            "content": "年假天数按司龄计算，满一年五天，满十年十天。",
+            "metadata": {"title": "考勤制度", "source_uri": "hr/attendance.pdf"},
+            "distance": 0.2,
+        },
+    ]
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "policy_query",
+        "confidence": 0.9,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("年假怎么算", context)
+
+    retriever = orchestrator.retriever
+    retriever.retrieve.assert_awaited_once()
+    assert "《考勤制度》" in result["content"]
+    assert "来源：hr/attendance.pdf" in result["content"]
+    assert result["rag_sources"][0]["title"] == "考勤制度"
+
+
+@pytest.mark.asyncio
+async def test_policy_query_retriever_empty_falls_back(orchestrator: Orchestrator) -> None:
+    """检索器无命中时回退 needs_rag 标记。"""
+    orchestrator.retriever = AsyncMock()
+    orchestrator.retriever.retrieve.return_value = []
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "policy_query",
+        "confidence": 0.9,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("报销标准是什么", context)
+
+    assert result.get("needs_rag") is True
+
+
+def test_compose_policy_answer_formats_citations() -> None:
+    """引用拼装：长内容截断、来源去重。"""
+    from app.admin_ai.core.agent.orchestrator import compose_policy_answer
+
+    docs = [
+        {"content": "很长" * 200, "metadata": {"title": "A", "source_uri": "a.pdf"}},
+        {"content": "短内容", "metadata": {"title": "B", "source_uri": "a.pdf"}},
+    ]
+    answer = compose_policy_answer(docs)
+    assert "《A》" in answer and "《B》" in answer
+    assert "…" in answer
+    assert answer.count("a.pdf") == 1
