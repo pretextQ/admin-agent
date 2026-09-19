@@ -18,7 +18,7 @@ async def get_redis() -> aioredis.Redis:
     global _redis_client
     if _redis_client is None:
         config = get_config()
-        _redis_client = aioredis.from_url(config.REDIS_URL, decode_responses=True)
+        _redis_client = aioredis.from_url(config.REDIS_URL, decode_responses=True, protocol=2)
     return _redis_client
 
 

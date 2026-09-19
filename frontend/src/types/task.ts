@@ -14,6 +14,8 @@ export interface TaskDetail extends TaskItem {
   data: Record<string, unknown> | null;
   external_id: string | null;
   completed_at: string | null;
+  can_approve?: boolean;
+  is_owner?: boolean;
   approvals: ApprovalItem[];
 }
 
@@ -24,6 +26,7 @@ export interface ApprovalItem {
   action: string | null;
   status: string;
   comment: string | null;
+  add_sign_user_id?: string | null;
   created_at: string | null;
   decided_at: string | null;
 }

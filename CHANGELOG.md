@@ -8,6 +8,9 @@
 ## [Unreleased]
 
 ### 新增
+- **端到端冒烟脚本** `scripts/e2e_smoke.py`：登录 → 聊天 → 工具（开发桩）→ 任务 → 审批 全链路 9 步验证
+- **审批操作界面**：任务详情页支持同意/驳回（`can_approve` 标记）与属主取消（`is_owner` 标记）；详情对当前审批人开放
+- **审批链创建**：高风险任务（报销/用印）确认执行后自动转 APPROVING 并为首个管理员生成待审批记录，低风险任务自动完成
 - **对话落库**：`/chat/send`、`/chat/confirm` 写入 `conversations`/`messages` 表；`/chat/history/{id}` 返回真实历史（含卡片还原），仅会话属主可查；前端聊天页进入时自动恢复历史消息
 - **任务落库**：工具执行成功后自动创建 `tasks` 记录（标题按业务与槽位生成，报销/用印标记 high risk），任务列表/详情/时间线有了真实数据来源
 - **RAG 制度问答闭环**：编排器接入检索器，policy_query 返回带引用来源的回答；知识上传分片向量化入库（chunk_count 回填）；`/knowledge/search` 向量检索优先、ILIKE 兜底；文档删除同步清理向量分片；Chroma 服务/本地嵌入式双模式，调用超时自动降级
@@ -19,6 +22,13 @@
 - **会话状态存储** `ConversationStateStore`（内存 / Redis 双实现）— 按 conversation_id 保存意图、业务类型、槽位、待确认状态
 
 ### 修复
+- **修复任务写入真实 PostgreSQL 必失败的问题**：迁移创建的原生枚举类型为小写 value（如 `pending`），而 `SAEnum` 绑定的是大写 name（`PENDING`），所有任务/消息/会话的查询与写入均报枚举无效——模型列补 `values_callable` 对齐（此前从未在真实 PG 上验证过，E2E 冒烟发现）
+- **修复对话写入的读写竞态**：`get_db_session` 的 teardown 提交发生在响应发送之后，紧随其后的查询可能读到提交前快照（E2E 中表现为任务列表计数为 0）；对话接口改为端点内显式提交
+- **修复 Redis 8 客户端与 Redis 5 服务端不兼容**：redis-py 默认 RESP3 握手（`HELLO 3`）被服务端拒绝，所有 `from_url` 显式 `protocol=2`
+- **槽位规则回退补强**：`《单据名》`→document_name、用印份数→copies、报销发票附件→invoice，无 LLM 时用印/报销流程可一步补全
+- **加签后原审批记录关闭**：修复原审批人与被加签人重复审批的问题；禁止加签给自己
+- **任务列表统计修正**：pending/approving 数量改为过滤后全量集合的 count，不再只统计当前页
+- **datetime 统一**：新增 `utc_now()`（无时区 UTC），替换模型默认值与接口中 `datetime.utcnow`/带时区 `now()` 混用（jwt 签发除外）
 - **知识库搜索 tags 匹配生效**：原实现在 `limit()` 之后过滤且候选集不含 tags-only 文档（死逻辑），现放大候选窗口并补独立 tags 扫描
 - **`/admin/*` 接口补齐鉴权**（原 5 个端点完全无鉴权且返回硬编码数据）：全部挂 `get_admin_user` 依赖
 - **高风险确认增加会话属主校验**：`ConversationState` 记录 `user_id`，`/chat/send` 与 `/chat/confirm` 均拒绝非属主操作，杜绝代他人确认报销/用印的风险

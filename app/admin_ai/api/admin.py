@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -14,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin_ai.api.response import ApiResponse
 from app.admin_ai.core.auth.deps import get_admin_user
 from app.admin_ai.db.database import get_db_session
-from app.admin_ai.db.models import AuditLogModel, ConversationModel, ConversationStatus, TaskModel, TaskStatus
+from app.admin_ai.db.models import AuditLogModel, ConversationModel, ConversationStatus, TaskModel, TaskStatus, utc_now
 
-# 与列默认值 datetime.utcnow 一致：全部使用无时区 UTC 时间
+# 全部使用无时区 UTC 时间（与列默认值 utc_now 一致）
 router = APIRouter(prefix="/admin", tags=["管理后台"], dependencies=[Depends(get_admin_user)])
 
 
@@ -25,7 +24,7 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[dict]:
     """仪表盘数据。"""
-    day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start = utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     today_conversations = await db.scalar(
         select(func.count()).select_from(ConversationModel)

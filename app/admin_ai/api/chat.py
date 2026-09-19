@@ -22,12 +22,16 @@ from app.admin_ai.core.agent.state_store import (
 from app.admin_ai.core.auth.deps import get_current_user
 from app.admin_ai.db.database import get_db_session
 from app.admin_ai.db.models import (
+    ApprovalModel,
     ConversationModel,
     ConversationStatus,
     MessageModel,
     MessageRole,
     TaskModel,
+    TaskStatus,
     TaskType,
+    UserModel,
+    utc_now,
 )
 
 router = APIRouter(prefix="/chat", tags=["对话"])
@@ -125,7 +129,8 @@ async def _save_chat_turn(
         meta=meta or None,
     ))
 
-    # 工具执行成功时创建任务记录，供任务列表/详情/时间线展示
+    # 工具执行成功时创建任务记录，供任务列表/详情/时间线展示。
+    # 低风险业务自动完成；高风险业务转审批（当前审批人取首个管理员）。
     business_type = result.get("task_type")
     if business_type:
         try:
@@ -134,15 +139,43 @@ async def _save_chat_turn(
             task_type = None
         if task_type:
             slots = result.get("slots") or {}
-            db.add(TaskModel(
+            is_high_risk = business_type in HIGH_RISK_BUSINESS
+            task = TaskModel(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 type=task_type,
                 title=_build_task_title(business_type, slots),
                 data=slots,
-                risk_level="high" if business_type in HIGH_RISK_BUSINESS else "low",
-                requires_confirmation=business_type in HIGH_RISK_BUSINESS,
-            ))
+                risk_level="high" if is_high_risk else "low",
+                requires_confirmation=is_high_risk,
+            )
+            db.add(task)
+
+            if is_high_risk:
+                admin = (
+                    await db.execute(
+                        select(UserModel)
+                        .where(
+                            UserModel.role == "admin",
+                            UserModel.is_active == True,  # noqa: E712
+                            UserModel.is_deleted == False,  # noqa: E712
+                        )
+                        .order_by(UserModel.created_at)
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if admin:
+                    await db.flush()
+                    task.status = TaskStatus.APPROVING
+                    db.add(ApprovalModel(
+                        task_id=task.id, approver_id=admin.id, step=1, status="pending"
+                    ))
+                else:
+                    # 无可用审批人时保持处理中，避免任务静默完成
+                    task.status = TaskStatus.PROCESSING
+            else:
+                task.status = TaskStatus.COMPLETED
+                task.completed_at = utc_now()
 
 
 @router.post("/send", response_model=ApiResponse[ChatResponse])
@@ -172,6 +205,7 @@ async def send_message(
     result = await orchestrator.process(payload.message, context, payload.attachments)
     await store.save(conversation_id, _build_conversation_state(context, result, current_user["user_id"]))
     await _save_chat_turn(db, conversation_id, current_user["user_id"], context, payload.message, result)
+    await db.commit()  # 显式提交：teardown 提交发生在响应之后，会造成读写竞态
 
     return ApiResponse(data=ChatResponse(
         conversation_id=conversation_id,
@@ -260,6 +294,7 @@ async def confirm_action(
             AgentContext(user_id=current_user["user_id"], conversation_id=conversation_id),
             user_message, {"content": content},
         )
+        await db.commit()
         return ApiResponse(data=ChatResponse(
             conversation_id=conversation_id,
             message_id=str(uuid.uuid4()),
@@ -279,6 +314,7 @@ async def confirm_action(
     await _save_chat_turn(
         db, conversation_id, current_user["user_id"], context, user_message, result
     )
+    await db.commit()
     return ApiResponse(data=ChatResponse(
         conversation_id=conversation_id,
         message_id=str(uuid.uuid4()),

@@ -24,7 +24,15 @@ from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.base import ToolResult
 from app.admin_ai.core.tools.registry import ToolRegistry
 from app.admin_ai.db.database import get_db_session
-from app.admin_ai.db.models import ConversationModel, MessageModel, TaskModel, TaskType
+from app.admin_ai.db.models import (
+    ApprovalModel,
+    ConversationModel,
+    MessageModel,
+    TaskModel,
+    TaskStatus,
+    TaskType,
+    UserModel,
+)
 from app.admin_ai.main import create_app
 
 
@@ -56,11 +64,18 @@ class _MockResult:
         return self._rows
 
 
-def _install_permissive_db(app, conversation=None, messages: list[Any] | None = None) -> AsyncMock:
-    """覆盖数据库依赖：默认查不到会话、无历史消息。"""
+def _install_permissive_db(
+    app, conversation=None, messages: list[Any] | None = None, extra_results: list[Any] | None = None
+) -> AsyncMock:
+    """覆盖数据库依赖：默认查不到会话、无历史消息，额外查询返回 extra_results。"""
     db = AsyncMock(spec=AsyncSession)
-    results = [_MockResult(value=conversation), _MockResult(rows=messages or [])]
-    db.execute = AsyncMock(side_effect=results)
+    queue = [_MockResult(value=conversation), _MockResult(rows=messages or [])]
+    queue.extend(extra_results or [])
+
+    def _execute(*args: Any, **kwargs: Any) -> Any:
+        return queue.pop(0) if queue else _MockResult(value=None)
+
+    db.execute = AsyncMock(side_effect=_execute)
     db.add = MagicMock()
     db.commit = AsyncMock()
     app.dependency_overrides[get_db_session] = lambda: db
@@ -260,13 +275,14 @@ async def test_multi_turn_slot_filling_completes() -> None:
     assert body.get("requires_action") is not True
     assert tool.calls, "补齐槽位后应调用工具"
 
-    # 成功执行应创建任务记录，供任务列表展示
+    # 成功执行应创建任务记录（低风险自动完成），供任务列表展示
     task_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], TaskModel)]
     assert len(task_adds) == 1
     assert task_adds[0].type == TaskType.LEAVE
     assert "年假" in task_adds[0].title
     assert task_adds[0].conversation_id == "conv-multi"
     assert task_adds[0].risk_level == "low"
+    assert task_adds[0].status == TaskStatus.COMPLETED
 
 
 def _confirm_orchestrator(captured: list[Any]) -> AsyncMock:
@@ -301,12 +317,14 @@ def _confirm_orchestrator(captured: list[Any]) -> AsyncMock:
 
 
 async def test_confirm_resumes_pending_action() -> None:
-    """高风险操作确认后应携带原槽位恢复执行。"""
+    """高风险操作确认后应携带原槽位恢复执行，并创建待审批任务。"""
     app = create_app()
     captured: list[Any] = []
     app.state.orchestrator = _confirm_orchestrator(captured)
     app.state.state_store = InMemoryConversationStateStore()
-    _install_permissive_db(app)
+    admin = MagicMock(spec=UserModel)
+    admin.id = "admin-1"
+    db = _install_permissive_db(app, extra_results=[_MockResult(value=admin)])
     transport = ASGITransport(app=app)
     headers = _make_auth_headers()
 
@@ -330,13 +348,17 @@ async def test_confirm_resumes_pending_action() -> None:
     assert confirm_context.business_type == "expense"
     assert confirm_context.slots == {"expense_type": "酒店", "amount": 500}
 
-    # 确认执行成功后创建高风险任务记录
-    db = app.dependency_overrides[get_db_session]()
+    # 确认执行成功后创建高风险任务并生成管理员审批链
     task_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], TaskModel)]
     assert len(task_adds) == 1
     assert task_adds[0].type == TaskType.EXPENSE
     assert task_adds[0].risk_level == "high"
     assert task_adds[0].requires_confirmation is True
+    assert task_adds[0].status == TaskStatus.APPROVING
+    approval_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], ApprovalModel)]
+    assert len(approval_adds) == 1
+    assert approval_adds[0].approver_id == "admin-1"
+    assert approval_adds[0].status == "pending"
 
 
 async def test_confirm_false_cancels_without_executing() -> None:

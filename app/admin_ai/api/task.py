@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -15,7 +14,7 @@ from app.admin_ai.api.response import ApiResponse, BusinessError
 from app.admin_ai.api.schemas import ApprovalRequest
 from app.admin_ai.core.auth.deps import get_current_user
 from app.admin_ai.db.database import get_db_session
-from app.admin_ai.db.models import ApprovalAction, ApprovalModel, TaskModel, TaskStatus
+from app.admin_ai.db.models import ApprovalAction, ApprovalModel, TaskModel, TaskStatus, utc_now
 
 router = APIRouter(prefix="/tasks", tags=["任务"])
 
@@ -36,20 +35,24 @@ async def get_my_tasks(
     if type:
         query = query.where(TaskModel.type == type)
 
-    # 统计总数
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    # 统计基于过滤后的全量集合，而非当前页
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    pending_count = await db.scalar(
+        select(func.count()).select_from(
+            query.where(TaskModel.status == TaskStatus.PENDING).subquery()
+        )
+    ) or 0
+    approving_count = await db.scalar(
+        select(func.count()).select_from(
+            query.where(TaskModel.status == TaskStatus.APPROVING).subquery()
+        )
+    ) or 0
 
     # 分页
     query = query.offset((page - 1) * page_size).limit(page_size)
     query = query.order_by(TaskModel.created_at.desc())
     result = await db.execute(query)
     tasks = result.scalars().all()
-
-    # 统计待处理和审批中数量
-    pending_count = sum(1 for t in tasks if t.status == TaskStatus.PENDING)
-    approving_count = sum(1 for t in tasks if t.status == TaskStatus.APPROVING)
 
     return ApiResponse(data={
         "items": [
@@ -120,13 +123,11 @@ async def get_task_detail(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[dict]:
-    """获取任务详情。"""
+    """获取任务详情。任务属主与当前审批人可见。"""
     result = await db.execute(select(TaskModel).where(TaskModel.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise BusinessError(code=40004, message="任务不存在")
-    if task.user_id != current_user["user_id"]:
-        raise BusinessError(code=40003, message="无权访问该任务")
 
     # 获取审批链
     approvals_result = await db.execute(
@@ -136,6 +137,17 @@ async def get_task_detail(
     )
     approvals = approvals_result.scalars().all()
 
+    is_owner = task.user_id == current_user["user_id"]
+    can_approve = (
+        task.status == TaskStatus.APPROVING
+        and any(
+            a.approver_id == current_user["user_id"] and a.status == "pending"
+            for a in approvals
+        )
+    )
+    if not is_owner and not can_approve:
+        raise BusinessError(code=40003, message="无权访问该任务")
+
     return ApiResponse(data={
         "id": task.id,
         "type": task.type.value if task.type else None,
@@ -144,6 +156,8 @@ async def get_task_detail(
         "data": task.data,
         "risk_level": task.risk_level,
         "external_id": task.external_id,
+        "can_approve": can_approve,
+        "is_owner": is_owner,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "approvals": [
@@ -154,6 +168,7 @@ async def get_task_detail(
                 "action": a.action.value if a.action else None,
                 "status": a.status,
                 "comment": a.comment,
+                "add_sign_user_id": a.add_sign_user_id,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
                 "decided_at": a.decided_at.isoformat() if a.decided_at else None,
             }
@@ -197,13 +212,21 @@ async def approve_task(
         raise BusinessError(code=40003, message="您不是当前审批人")
 
     if payload.action == "add_sign":
-        # 加签：插入新的 pending ApprovalModel
+        # 加签：关闭原审批记录，插入被加签人的 pending 记录
         if not payload.add_sign_user_id:
             raise BusinessError(code=40001, message="加签必须指定 add_sign_user_id")
+        if payload.add_sign_user_id == current_user["user_id"]:
+            raise BusinessError(code=40001, message="不能加签给自己")
+
+        approval.action = ApprovalAction.ADD_SIGN
+        approval.status = "done"
+        approval.add_sign_user_id = payload.add_sign_user_id
+        approval.decided_at = utc_now()
+
         new_approval = ApprovalModel(
             task_id=task_id,
             approver_id=payload.add_sign_user_id,
-            step=approval.step + 1,
+            step=approval.step,
             status="pending",
         )
         db.add(new_approval)
@@ -219,7 +242,7 @@ async def approve_task(
     approval.action = ApprovalAction(payload.action)
     approval.status = payload.action
     approval.comment = payload.comment
-    approval.decided_at = datetime.now(timezone.utc)
+    approval.decided_at = utc_now()
 
     if payload.action == "reject":
         task.status = TaskStatus.FAILED
@@ -238,7 +261,7 @@ async def approve_task(
         else:
             # 所有审批完成
             task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.now(timezone.utc)
+            task.completed_at = utc_now()
 
     await db.commit()
     return ApiResponse(data={

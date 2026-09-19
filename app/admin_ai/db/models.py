@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +19,14 @@ from app.admin_ai.db.database import Base
 def generate_uuid() -> str:
     """生成 UUID 字符串。"""
     return str(uuid.uuid4())
+
+
+def utc_now() -> datetime:
+    """无时区 UTC 时间，与 TIMESTAMP WITHOUT TIME ZONE 列约定一致。
+
+    全项目时间统一使用本函数，禁止混用 datetime.utcnow 与带时区的 now()。
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class ConversationStatus(str, Enum):
@@ -82,9 +90,9 @@ class UserModel(Base):
     permissions: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
 
     conversations: Mapped[List[ConversationModel]] = relationship(
@@ -105,14 +113,14 @@ class ConversationModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     status: Mapped[ConversationStatus] = mapped_column(
-        SAEnum(ConversationStatus), default=ConversationStatus.ACTIVE, nullable=False
+        SAEnum(ConversationStatus, values_callable=lambda x: [e.value for e in x]), default=ConversationStatus.ACTIVE, nullable=False
     )
     intent: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     business_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     context: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
 
     user: Mapped[UserModel] = relationship(back_populates="conversations")
@@ -134,10 +142,10 @@ class MessageModel(Base):
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id"), index=True, nullable=False
     )
-    role: Mapped[MessageRole] = mapped_column(SAEnum(MessageRole), nullable=False)
+    role: Mapped[MessageRole] = mapped_column(SAEnum(MessageRole, values_callable=lambda x: [e.value for e in x]), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     meta: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
 
     conversation: Mapped[ConversationModel] = relationship(back_populates="messages")
 
@@ -154,9 +162,9 @@ class TaskModel(Base):
     conversation_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("conversations.id"), nullable=True
     )
-    type: Mapped[TaskType] = mapped_column(SAEnum(TaskType), nullable=False)
+    type: Mapped[TaskType] = mapped_column(SAEnum(TaskType, values_callable=lambda x: [e.value for e in x]), nullable=False)
     status: Mapped[TaskStatus] = mapped_column(
-        SAEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False
+        SAEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]), default=TaskStatus.PENDING, nullable=False
     )
     title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
@@ -165,9 +173,9 @@ class TaskModel(Base):
     risk_level: Mapped[str] = mapped_column(String(20), default="low", nullable=False)
     requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -189,11 +197,11 @@ class ApprovalModel(Base):
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True, nullable=False)
     approver_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     step: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    action: Mapped[Optional[ApprovalAction]] = mapped_column(SAEnum(ApprovalAction), nullable=True)
+    action: Mapped[Optional[ApprovalAction]] = mapped_column(SAEnum(ApprovalAction, values_callable=lambda x: [e.value for e in x]), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     add_sign_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     task: Mapped[TaskModel] = relationship(back_populates="approvals")
@@ -220,7 +228,7 @@ class AuditLogModel(Base):
     ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, index=True, nullable=False
+        DateTime, default=utc_now, index=True, nullable=False
     )
 
     def __repr__(self) -> str:
@@ -241,9 +249,9 @@ class KnowledgeDocModel(Base):
     embedding_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
 
     def __repr__(self) -> str:

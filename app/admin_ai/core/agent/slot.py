@@ -65,15 +65,28 @@ class SlotExtractor:
         fallback = self._fallback_extract(message, business_type, existing)
 
         if self._llm is None or not business_type:
-            return fallback
+            return self._apply_attachment_slots(fallback, business_type, attachments)
 
         try:
             llm_slots = await self._llm_extract(message, business_type, existing)
         except Exception as exc:  # LLM 不可用时不得阻断主流程
             logger.error("槽位抽取失败，回退规则抽取", error=str(exc))
+            fallback = self._apply_attachment_slots(fallback, business_type, attachments)
             return fallback
 
-        return {**fallback, **llm_slots}
+        merged = {**fallback, **llm_slots}
+        return self._apply_attachment_slots(merged, business_type, attachments)
+
+    @staticmethod
+    def _apply_attachment_slots(
+        slots: dict[str, Any],
+        business_type: Optional[str],
+        attachments: Optional[list[str]],
+    ) -> dict[str, Any]:
+        """把附件映射到对应槽位（如报销的发票凭证）。"""
+        if business_type == "expense" and attachments and "invoice" not in slots:
+            slots["invoice"] = attachments[0]
+        return slots
 
     async def _llm_extract(
         self,
@@ -123,7 +136,17 @@ class SlotExtractor:
 
         quantity_match = QUANTITY_PATTERN.search(message)
         if quantity_match and "quantity" not in slots:
-            slots["quantity"] = int(quantity_match.group(1))
+            value = int(quantity_match.group(1))
+            if business_type == "seal":
+                # 用印业务的份数槽位
+                slots["copies"] = value
+            else:
+                slots["quantity"] = value
+
+        # 单据名：《劳动合同》 -> document_name=劳动合同
+        doc_match = re.search(r"《([^《》]+)》", message)
+        if doc_match and "document_name" not in slots:
+            slots["document_name"] = doc_match.group(1)
 
         amount_match = AMOUNT_PATTERN.search(message)
         if amount_match and "amount" not in slots:

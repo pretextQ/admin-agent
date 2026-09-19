@@ -13,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.admin_ai.core.auth.jwt_token import create_access_token
 from app.admin_ai.db.database import get_db_session
-from app.admin_ai.db.models import ApprovalModel, TaskModel, TaskStatus
+from app.admin_ai.db.models import ApprovalAction, ApprovalModel, TaskModel, TaskStatus
 from app.admin_ai.main import create_app
 
 
@@ -317,4 +317,127 @@ async def test_cancel_rejects_non_owner() -> None:
     assert response.status_code == 403
     data = response.json()
     assert data["code"] == 40003
+    app.dependency_overrides.clear()
+
+
+async def test_add_sign_closes_original_approval() -> None:
+    """加签后原审批记录应关闭（不再是 pending），并生成被加签人的新记录。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, status=TaskStatus.APPROVING)
+    approval = _make_approval("a1", task_id, "user1", step=1)
+    db = _make_mock_db(task=task, approval=approval)
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers(user_id="user1")
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/v1/tasks/{task_id}/approve",
+            json={"action": "add_sign", "add_sign_user_id": "user2"},
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    assert approval.status == "done"
+    assert approval.action == ApprovalAction.ADD_SIGN
+    assert approval.add_sign_user_id == "user2"
+    assert approval.decided_at is not None
+    added = [c.args[0] for c in db.add.call_args_list]
+    assert any(
+        isinstance(a, ApprovalModel) and a.approver_id == "user2" and a.status == "pending"
+        for a in added
+    )
+    app.dependency_overrides.clear()
+
+
+async def test_add_sign_rejects_self() -> None:
+    """不能加签给自己。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, status=TaskStatus.APPROVING)
+    approval = _make_approval("a1", task_id, "user1", step=1)
+    db = _make_mock_db(task=task, approval=approval)
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers(user_id="user1")
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/v1/tasks/{task_id}/approve",
+            json={"action": "add_sign", "add_sign_user_id": "user1"},
+            headers=headers,
+        )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == 40001
+    app.dependency_overrides.clear()
+
+
+async def test_detail_visible_to_current_approver() -> None:
+    """当前审批人可以查看任务详情并拿到 can_approve 标记。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, user_id="owner_user", status=TaskStatus.APPROVING)
+    approval = _make_approval("a1", task_id, "admin-1", step=1)
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[
+        _MockScalarOneOrNone(task),
+        _MockScalars([approval]),
+    ])
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers(user_id="admin-1")
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/tasks/{task_id}",
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["can_approve"] is True
+    app.dependency_overrides.clear()
+
+
+async def test_detail_rejects_unrelated_user() -> None:
+    """既非属主也非审批人的用户访问详情返回 40003。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, user_id="owner_user", status=TaskStatus.APPROVING)
+    approval = _make_approval("a1", task_id, "admin-1", step=1)
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[
+        _MockScalarOneOrNone(task),
+        _MockScalars([approval]),
+    ])
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers(user_id="random_user")
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/tasks/{task_id}",
+            headers=headers,
+        )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == 40003
     app.dependency_overrides.clear()

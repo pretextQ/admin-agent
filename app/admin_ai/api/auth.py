@@ -33,7 +33,7 @@ async def feishu_login_url(request: Request) -> ApiResponse[dict]:
     config = get_config()
     state = generate_state()
     try:
-        redis_client = redis.from_url(config.REDIS_URL)
+        redis_client = redis.from_url(config.REDIS_URL, protocol=2)
         await redis_client.set(f"feishu_state:{state}", "1", ex=300)
         await redis_client.close()
     except Exception:
@@ -55,7 +55,7 @@ async def feishu_callback(
 
     # 1. 校验 state
     try:
-        redis_client = redis.from_url(config.REDIS_URL)
+        redis_client = redis.from_url(config.REDIS_URL, protocol=2)
         stored = await redis_client.get(f"feishu_state:{state}")
         await redis_client.delete(f"feishu_state:{state}")
         await redis_client.close()

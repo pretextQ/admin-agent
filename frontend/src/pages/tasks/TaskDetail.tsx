@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button, Tag, Timeline, Spin, Descriptions } from "@douyinfe/semi-ui";
 import { IconArrowLeft } from "@douyinfe/semi-icons";
@@ -19,16 +19,15 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<TaskDetailType | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState(false);
 
-  useEffect(() => {
-    if (!id) return;
-
-    async function load() {
+  const load = useCallback(
+    async (taskId: string) => {
       setLoading(true);
       try {
         const [taskData, timelineData] = await Promise.all([
-          taskApi.getTaskDetail(id!),
-          taskApi.getTimeline(id!),
+          taskApi.getTaskDetail(taskId),
+          taskApi.getTimeline(taskId),
         ]);
         setTask(taskData);
         setTimeline(timelineData.timeline);
@@ -37,9 +36,42 @@ export default function TaskDetailPage() {
       } finally {
         setLoading(false);
       }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (id) load(id);
+  }, [id, load]);
+
+  const handleApprove = useCallback(
+    async (action: "approve" | "reject") => {
+      if (!id) return;
+      setActing(true);
+      try {
+        await taskApi.approveTask(id, { action });
+        await load(id);
+      } catch {
+        // 失败时保留当前状态，用户可重试
+      } finally {
+        setActing(false);
+      }
+    },
+    [id, load]
+  );
+
+  const handleCancel = useCallback(async () => {
+    if (!id) return;
+    setActing(true);
+    try {
+      await taskApi.cancelTask(id);
+      await load(id);
+    } catch {
+      // ignore
+    } finally {
+      setActing(false);
     }
-    load();
-  }, [id]);
+  }, [id, load]);
 
   if (loading) {
     return (
@@ -135,6 +167,26 @@ export default function TaskDetailPage() {
           ))}
         </Timeline>
       </div>
+
+      {(task.can_approve || (task.is_owner && task.status === "approving")) && (
+        <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
+          {task.can_approve && (
+            <>
+              <Button theme="solid" type="primary" loading={acting} onClick={() => handleApprove("approve")}>
+                同意
+              </Button>
+              <Button type="danger" loading={acting} onClick={() => handleApprove("reject")}>
+                驳回
+              </Button>
+            </>
+          )}
+          {task.is_owner && task.status === "approving" && (
+            <Button loading={acting} onClick={handleCancel}>
+              取消任务
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

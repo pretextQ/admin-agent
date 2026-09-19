@@ -134,7 +134,7 @@ def build_state_store(redis_url: str, ttl: int = 86400) -> ConversationStateStor
         logger.warning("redis 依赖未安装，会话状态使用进程内存储")
         return InMemoryConversationStateStore()
 
-    client = aioredis.from_url(redis_url, decode_responses=True)
+    client = aioredis.from_url(redis_url, decode_responses=True, protocol=2)
     return RedisConversationStateStore(client, ttl=ttl)
 
 
