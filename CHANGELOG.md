@@ -8,10 +8,20 @@
 ## [Unreleased]
 
 ### 新增
+- **对话落库**：`/chat/send`、`/chat/confirm` 写入 `conversations`/`messages` 表；`/chat/history/{id}` 返回真实历史（含卡片还原），仅会话属主可查；前端聊天页进入时自动恢复历史消息
+- **审计落库**：审计中间件对 POST/PUT/DELETE 请求写入 `audit_logs`（动作、用户、请求体、IP、UA、结论），失败仅告警不阻断业务；`GET /admin/audit-logs` 改为真实查询
+- **管理后台真实数据**：`/admin/dashboard`、`/admin/metrics` 基于数据库统计（今日会话/任务、转人工率、完成率、高频意图），`/admin/tools` 读取工具注册中心
+- **安全测试**：新增 admin 鉴权（401/403）、会话属主校验、任务取消状态校验、审计落库与 TraceId 中间件共 19 个用例
 - **LLM 客户端工厂** `app/admin_ai/core/llm.py` — 按 `OPENAI_API_KEY` 构建 OpenAI 兼容客户端；未配置或依赖缺失时降级为规则回退
 - **会话状态存储** `ConversationStateStore`（内存 / Redis 双实现）— 按 conversation_id 保存意图、业务类型、槽位、待确认状态
 
 ### 修复
+- **`/admin/*` 接口补齐鉴权**（原 5 个端点完全无鉴权且返回硬编码数据）：全部挂 `get_admin_user` 依赖
+- **高风险确认增加会话属主校验**：`ConversationState` 记录 `user_id`，`/chat/send` 与 `/chat/confirm` 均拒绝非属主操作，杜绝代他人确认报销/用印的风险
+- **任务取消增加状态校验**：仅 pending/processing/approving 可取消，已完成/已失败/已取消任务返回 40001
+- **中间件正式启用**：`TraceIdMiddleware`、`AuditMiddleware` 注册到应用（原已实现未注册，审计表永远为空）
+- **全局异常处理器不再吞异常**：未处理异常记录结构化错误日志（含堆栈）后返回 50001
+- **`confirmAction` 参数名纠正**：前端 `taskId` 改为 `conversationId`，与后端实现对齐（与 API 规格的 task_id 分歧为遗留决策 D-01）
 - **多轮对话不再丢失状态**：`/chat/send` 每轮恢复并写回会话状态，槽位补全可跨请求完成
 - **有 LLM 时不再空转**：修复 `SlotExtractor` 在传入 LLM 客户端时直接返回已有槽位（不抽取）的问题
 - **编排器支持槽位续填**：正在补全槽位时跳过意图识别，避免把补充信息误判为未知意图而转人工

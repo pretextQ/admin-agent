@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import type { Message } from "@/types";
 import { chatApi } from "@/api";
 import { useChatStore } from "@/stores";
@@ -6,8 +6,28 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 
 export default function ChatPage() {
-  const { messages, isTyping, conversationId, addMessage, setTyping, setConversationId } =
+  const { messages, isTyping, conversationId, addMessage, setMessages, setTyping, setConversationId } =
     useChatStore();
+
+  // 进入页面时恢复当前会话的历史消息（刷新后不再丢失上下文）
+  useEffect(() => {
+    if (!conversationId || messages.length > 0) return;
+    let cancelled = false;
+    chatApi
+      .getHistory(conversationId)
+      .then((resp) => {
+        if (cancelled || resp.messages.length === 0) return;
+        setMessages(resp.messages);
+      })
+      .catch(() => {
+        // 历史加载失败不阻塞聊天，仅保留本地消息
+      });
+    return () => {
+      cancelled = true;
+    };
+    // 仅在挂载/会话切换时拉取一次，避免与发送逻辑互相覆盖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   const handleSend = useCallback(
     async (content: string) => {

@@ -28,6 +28,7 @@ class ConversationState:
     slots: dict[str, Any] = field(default_factory=dict)
     awaiting_slots: bool = False
     pending_confirmation: bool = False
+    user_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """转为可 JSON 序列化的字典。"""
@@ -37,6 +38,7 @@ class ConversationState:
             "slots": self.slots,
             "awaiting_slots": self.awaiting_slots,
             "pending_confirmation": self.pending_confirmation,
+            "user_id": self.user_id,
         }
 
     @classmethod
@@ -48,6 +50,7 @@ class ConversationState:
             slots=dict(data.get("slots") or {}),
             awaiting_slots=bool(data.get("awaiting_slots", False)),
             pending_confirmation=bool(data.get("pending_confirmation", False)),
+            user_id=data.get("user_id"),
         )
 
 

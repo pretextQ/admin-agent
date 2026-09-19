@@ -262,6 +262,12 @@ async def cancel_task(
     if task.user_id != current_user["user_id"]:
         raise BusinessError(code=40003, message="无权取消该任务")
 
+    cancellable = {TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.APPROVING}
+    if task.status not in cancellable:
+        raise BusinessError(
+            code=40001, message=f"任务当前状态为 {task.status.value}，不可取消"
+        )
+
     task.status = TaskStatus.CANCELLED
     await db.commit()
 

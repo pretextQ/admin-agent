@@ -21,6 +21,8 @@ from app.admin_ai.core.agent.state_store import build_state_store
 from app.admin_ai.core.llm import build_llm_client
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.registry import init_tools
+from app.admin_ai.middleware.audit import AuditMiddleware
+from app.admin_ai.middleware.logging import TraceIdMiddleware
 from app.admin_ai.utils.logger import configure_logging
 
 logger = structlog.get_logger(__name__)
@@ -86,6 +88,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 后添加的中间件在外层：TraceId 最先处理请求，审计日志因此带有 trace 上下文
+    app.add_middleware(AuditMiddleware)
+    app.add_middleware(TraceIdMiddleware)
 
     # 异常处理器
     register_exception_handlers(app)

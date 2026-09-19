@@ -237,3 +237,84 @@ async def test_timeline_ownership() -> None:
     data = response.json()
     assert data["code"] == 40003
     app.dependency_overrides.clear()
+
+
+async def test_cancel_completed_task_rejected() -> None:
+    """已完成/已取消的任务不可再取消，返回 40001。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, status=TaskStatus.COMPLETED)
+    db = _make_mock_db(task=task)
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/v1/tasks/{task_id}/cancel",
+            headers=headers,
+        )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["code"] == 40001
+    assert "不可取消" in data["message"]
+    app.dependency_overrides.clear()
+
+
+async def test_cancel_pending_task_success() -> None:
+    """pending 状态的任务可被属主取消。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, status=TaskStatus.PENDING)
+    db = _make_mock_db(task=task)
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/v1/tasks/{task_id}/cancel",
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == 0
+    assert data["data"]["status"] == "cancelled"
+    assert task.status == TaskStatus.CANCELLED
+    app.dependency_overrides.clear()
+
+
+async def test_cancel_rejects_non_owner() -> None:
+    """非任务属主取消任务返回 40003。"""
+    app = create_app()
+    task_id = str(uuid.uuid4())
+    task = _make_task(task_id, user_id="owner_user", status=TaskStatus.PENDING)
+    db = _make_mock_db(task=task)
+
+    async def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _override_db
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers(user_id="other_user")
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/v1/tasks/{task_id}/cancel",
+            headers=headers,
+        )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert data["code"] == 40003
+    app.dependency_overrides.clear()

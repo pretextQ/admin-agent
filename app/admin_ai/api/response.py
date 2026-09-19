@@ -6,12 +6,15 @@ from __future__ import annotations
 
 from typing import Any, Generic, Optional, TypeVar
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 T = TypeVar("T")
+
+logger = structlog.get_logger(__name__)
 
 
 class ApiResponse(BaseModel, Generic[T]):
@@ -69,5 +72,11 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
+        logger.error(
+            "未处理异常",
+            path=request.url.path,
+            method=request.method,
+            exc_info=exc,
+        )
         body = ErrorResponse(code=50001, message="内部错误")
         return JSONResponse(status_code=500, content=body.model_dump())

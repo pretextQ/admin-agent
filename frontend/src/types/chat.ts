@@ -17,3 +17,9 @@ export interface Message {
   requires_action?: boolean;
   created_at?: string;
 }
+
+export interface ChatHistoryResponse {
+  conversation_id: string;
+  messages: Message[];
+  total: number;
+}
