@@ -27,7 +27,9 @@ from app.admin_ai.db.database import get_db_session
 from app.admin_ai.db.models import (
     ApprovalModel,
     ConversationModel,
+    ConversationStatus,
     MessageModel,
+    MessageRole,
     TaskModel,
     TaskStatus,
     TaskType,
@@ -213,6 +215,89 @@ async def test_transfer_requires_auth() -> None:
     assert response.status_code == 401
     data = response.json()
     assert data["code"] == 40002
+
+
+async def test_transfer_marks_conversation_transferred() -> None:
+    """转人工应把会话标记为 transferred 并写一条消息进历史。"""
+    app = create_app()
+    conversation = MagicMock(spec=ConversationModel)
+    conversation.id = "conv-transfer"
+    conversation.user_id = "user1"
+    db = _install_permissive_db(app, conversation=conversation)
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/chat/transfer/conv-transfer",
+            json={"reason": "需要人工协助"},
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 0
+    assert conversation.status == ConversationStatus.TRANSFERRED
+    message_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], MessageModel)]
+    assert len(message_adds) == 1
+    assert message_adds[0].conversation_id == "conv-transfer"
+    assert message_adds[0].role == MessageRole.ASSISTANT
+    db.commit.assert_awaited()
+
+
+async def test_transfer_rejects_non_owner() -> None:
+    """非会话属主不能把他人会话转人工。"""
+    app = create_app()
+    conversation = MagicMock(spec=ConversationModel)
+    conversation.id = "conv-transfer"
+    conversation.user_id = "owner"
+    _install_permissive_db(app, conversation=conversation)
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers(user_id="intruder")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/chat/transfer/conv-transfer", json={}, headers=headers
+        )
+    assert response.status_code == 403
+    assert response.json()["code"] == 40003
+
+
+async def test_transfer_unknown_conversation_returns_404() -> None:
+    """会话不存在时转人工返回 40004，而不是谎报成功。"""
+    app = create_app()
+    _install_permissive_db(app)
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/v1/chat/transfer/conv-missing", json={}, headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == 40004
+
+
+async def test_transfer_clears_pending_confirmation() -> None:
+    """转人工后清除待确认状态，避免人工介入期间仍能确认执行高风险操作。"""
+    app = create_app()
+    store = InMemoryConversationStateStore()
+    await store.save(
+        "conv-transfer",
+        ConversationState(
+            user_id="user1",
+            business_type="expense",
+            slots={"expense_type": "酒店", "amount": 500},
+            pending_confirmation=True,
+        ),
+    )
+    app.state.state_store = store
+    conversation = MagicMock(spec=ConversationModel)
+    conversation.id = "conv-transfer"
+    conversation.user_id = "user1"
+    _install_permissive_db(app, conversation=conversation)
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post("/api/v1/chat/transfer/conv-transfer", json={}, headers=headers)
+
+    state = await store.get("conv-transfer")
+    assert state is None or state.pending_confirmation is False
 
 
 class _StubTool:

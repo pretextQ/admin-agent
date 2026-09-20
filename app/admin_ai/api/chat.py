@@ -7,6 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,9 @@ from app.admin_ai.db.models import (
     UserModel,
     utc_now,
 )
+from app.admin_ai.services.notification_service import NotificationService
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["对话"])
 
@@ -328,11 +332,50 @@ async def confirm_action(
 async def transfer_to_human(
     conversation_id: str,
     payload: TransferRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[ChatResponse]:
-    """转人工。TODO: 对接人工客服队列，当前仅返回固定话术。"""
-    return ApiResponse(data=ChatResponse(
+    """转人工：标记会话状态、写入历史消息、清除待确认状态并通知人工客服。"""
+    conversation = (
+        await db.execute(select(ConversationModel).where(ConversationModel.id == conversation_id))
+    ).scalar_one_or_none()
+    if conversation is None:
+        raise BusinessError(code=40004, message="会话不存在")
+    if conversation.user_id != current_user["user_id"]:
+        raise BusinessError(code=40003, message="无权操作该会话")
+
+    content = "已为您转接人工客服，请稍候。"
+    conversation.status = ConversationStatus.TRANSFERRED
+    db.add(
+        MessageModel(
+            conversation_id=conversation_id,
+            role=MessageRole.ASSISTANT,
+            content=content,
+            meta={"transfer_to_human": True, "reason": payload.reason},
+        )
+    )
+    await db.commit()
+
+    # 转人工后清除待确认状态：人工介入期间不应再通过 /chat/confirm 自动执行高风险操作
+    await _get_state_store(request).clear(conversation_id)
+
+    await NotificationService().send_notification(
+        user_id=current_user["user_id"],
+        title="转人工请求",
+        content=payload.reason or f"会话 {conversation_id} 请求转接人工客服",
+    )
+
+    logger.info(
+        "转人工",
         conversation_id=conversation_id,
-        message_id=str(uuid.uuid4()),
-        content="已为您转接人工客服，请稍候。",
-    ))
+        user_id=current_user["user_id"],
+        reason=payload.reason,
+    )
+    return ApiResponse(
+        data=ChatResponse(
+            conversation_id=conversation_id,
+            message_id=str(uuid.uuid4()),
+            content=content,
+        )
+    )

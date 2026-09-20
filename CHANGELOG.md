@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### 新增
+- **转人工落地**：`/chat/transfer` 由固定话术改为真实处理——校验会话存在性与属主后置 `conversations.status=transferred`、写入历史消息（meta 记录 `transfer_to_human` 与 `reason`）、清除会话待确认状态、调用 `NotificationService` 通知人工客服
 - **端到端冒烟脚本** `scripts/e2e_smoke.py`：登录 → 聊天 → 工具（开发桩）→ 任务 → 审批 全链路 9 步验证
 - **审批操作界面**：任务详情页支持同意/驳回（`can_approve` 标记）与属主取消（`is_owner` 标记）；详情对当前审批人开放
 - **审批链创建**：高风险任务（报销/用印）确认执行后自动转 APPROVING 并为首个管理员生成待审批记录，低风险任务自动完成
@@ -22,6 +23,7 @@
 - **会话状态存储** `ConversationStateStore`（内存 / Redis 双实现）— 按 conversation_id 保存意图、业务类型、槽位、待确认状态
 
 ### 修复
+- **`/chat/transfer` 补齐会话校验**：原端点无任何校验、不落库、对任意会话都谎报"已转接成功"——任何登录用户可对他人会话发起转人工；现校验会话存在（40004）与属主（40003），并真实落库会话状态与消息
 - **修复任务写入真实 PostgreSQL 必失败的问题**：迁移创建的原生枚举类型为小写 value（如 `pending`），而 `SAEnum` 绑定的是大写 name（`PENDING`），所有任务/消息/会话的查询与写入均报枚举无效——模型列补 `values_callable` 对齐（此前从未在真实 PG 上验证过，E2E 冒烟发现）
 - **修复对话写入的读写竞态**：`get_db_session` 的 teardown 提交发生在响应发送之后，紧随其后的查询可能读到提交前快照（E2E 中表现为任务列表计数为 0）；对话接口改为端点内显式提交
 - **修复 Redis 8 客户端与 Redis 5 服务端不兼容**：redis-py 默认 RESP3 握手（`HELLO 3`）被服务端拒绝，所有 `from_url` 显式 `protocol=2`
@@ -46,6 +48,11 @@
 - 确认卡片 `card_data` 对齐 API 规格第 10 节：`{type, title, data, actions, warning}`
 - `pytest` 默认仅运行非集成用例（`-m "not integration and not e2e and not llm"`），集成用例按需显式选择
 - 修正过期的健康检查用例：认证上线后 `/chat/send` 无 Token 应返回 401
+
+### 文档
+- **交接说明按 2026-09-20 环境重建同步**：项目路径由 `Z:\zcode\admin-ai-agent` 迁至 `D:\NF\Test\Kit\admin-ai-agent`；PostgreSQL 由 Windows 服务改为 `D:\NF\Tools\pgsql` 绿色二进制（`pg_ctl` 手动启停，数据目录 `D:\NF\Tools\pgsql\pgdata`，trust 认证）；Python 运行时改为 uv 隔离管理的 3.12.14（系统 3.8 保持不动）；Redis 迁至 `D:\NF\Redis`；新增两条踩坑速查（Node/pnpm 的 Windows PATH 陷阱、MSYS 把 `/d/xxx` 当盘符相对路径）
+- 环境核验 7 项全绿记录：PG/Redis/开发桩/后端 healthy、`pytest` 91 passed 1 deselected、`e2e_smoke` 9/9、前端构建成功
+- 本地 `.env` 已配好智谱 OpenAI 兼容端点（`open.bigmodel.cn/api/paas/v4/`、`glm-4-flash`），仅待填入有效 `OPENAI_API_KEY`（当前走规则回退）
 
 ---
 
