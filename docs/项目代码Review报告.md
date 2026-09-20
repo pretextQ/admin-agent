@@ -37,12 +37,12 @@
 
 | 项 | 命令 | 初始结果 | 当前结果（2026-09-20） |
 |----|------|----------|----------|
-| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **223 passed, 17 deselected** |
+| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **304 passed, 27 deselected** |
 | 前端类型检查 | `pnpm -C frontend exec tsc -b` | 通过 | 通过 |
 | 前端 lint | `pnpm -C frontend lint` | 0 error / 1 warning | 0 error / 1 warning |
 | 前端构建 | `pnpm -C frontend build` | 通过 | 通过 |
-| 端到端冒烟 | `PYTHONPATH=. python scripts/e2e_smoke.py` | 未实现 | **9/9 通过**（真实 DeepSeek + 跨用户审批路由） |
-| 集成用例 | `pytest -m integration` | 需 asyncpg/DB | **17/17 通过**（真实 PostgreSQL） |
+| 端到端冒烟 | `PYTHONPATH=. python scripts/e2e_smoke.py` | 未实现 | **11/11 通过**（真实 DeepSeek + 跨用户审批路由 + 状态查询只读与受理编号校验） |
+| 集成用例 | `pytest -m integration` | 需 asyncpg/DB | **27/27 通过**（真实 PostgreSQL） |
 | lint/format | `ruff check app/ tests/` | 未执行 | 399 项待清（333 可自动修，详见交接文档 P2-14；Batch 13 新增文件零告警） |
 
 > 环境说明：开发机系统 Python 为 3.8.10，本项目**用 uv 隔离安装 Python 3.12** 并建 `.venv`
@@ -112,6 +112,11 @@
 
 ### R-16　`status_query` 为占位实现
 - **位置**：`orchestrator.py` 返回 `needs_status_query` 占位，无实际查询。
+- **状态**：✅ **已修复（2026-09-20，Batch 15）**。`core/status_query.py` 实现真实只读查询：
+  查询类型归一（场景 03 §3.3 规则 + LLM 判定优先）、时间范围解析（默认 30 天、上限 1 年）、
+  归属下推 SQL（本人）、按单据号精确查询（他人单据明确拒绝）、假期余额取 HR 并带降级标注。
+  编排器只做识别（无数据库会话），聚合在 API 层执行；未给查询类型时追问（TC008）。
+  仍需开放：`query_target` 跨用户查询（TC006）未实现。
 
 ### R-17　`vehicle` 工具不可达
 - **位置**：`orchestrator.py` 的 `INTENT_TO_BUSINESS` 无 `vehicle`；`core/tools/registry.py` 注册了 `vehicle`。
@@ -226,7 +231,7 @@
 | 序号 | 任务 | 对应问题 |
 |------|------|----------|
 | 1 | RAG 接入编排器，制度问答返回引用 | R-15 |
-| 2 | 实现 `status_query` 综合查询 | R-16 |
+| 2 | 实现 `status_query` 综合查询 | R-16 ✅ 2026-09-20 Batch 15 完成 |
 | 3 | 补车辆意图映射 | R-17 |
 | 4 | 修复知识库搜索逻辑 | R-18 |
 | 5 | 接入 Prometheus 指标 | R-19 |
@@ -323,8 +328,9 @@ pnpm -C frontend build
 
 **P1 级**：R-10（OAuth state 校验失败时静默跳过，开发环境可接受但生产需收紧）、
 R-11（审批状态取值前后端不一致；**审批链本身已按 B-2 落地**，状态取值口径待前端一并统一）、
-R-13（规则引擎类型健壮性）、R-16（`status_query` 仍为占位，意图已识别无消费方）、
+R-13（规则引擎类型健壮性）、
 R-19（Prometheus 指标未接入）。
+（R-16 `status_query` 占位已于 2026-09-20 Batch 15 修复。）
 
 **P2 级**：R-21（services 层仍为死代码，`notification_service` 已被转人工与审批路由失败通知调用）、
 R-22（前端模板残留样式）、R-23（Docker/nginx 部署文件缺失）、R-24（`langchain*`/`celery` 声明未使用）、

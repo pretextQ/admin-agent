@@ -25,6 +25,9 @@ INTENT_PROMPT = """你是一个企业行政助手的意图识别模块。
 
 请以 JSON 格式返回：
 {"intent": "<意图标签>", "business_type": "<业务类型>", "confidence": <置信度>}
+
+当意图为 status_query 时，另给出 query_type，取值只能是「任务进度」「假期余额」「报销状态」
+三者之一；若用户只说要查状态、没说查哪一类，query_type 留空字符串。
 """
 
 SLOT_PROMPT = """你是一个企业行政助手的槽位抽取模块。

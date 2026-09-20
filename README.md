@@ -336,9 +336,10 @@ pytest -m "not slow"
 PYTHONPATH=. python scripts/e2e_smoke.py
 ```
 
-脚本覆盖 9 步：dev-login → 请假（一步补全槽位 → 工具执行 → 任务自动完成）→
+脚本覆盖 10 步：dev-login → 请假（一步补全槽位 → 工具执行 → 任务自动完成）→
 报销（员工 emp999 提交 → 确认执行 → **按审批规则路由到部门主管**）→ 主管待审批列表 →
-审批通过 → 会话历史落库。前置需执行 `python scripts/seed_org_demo.py` 建立演示组织。
+审批通过 → 会话历史落库 → **状态查询**（查真实单据进度与假期余额，并断言只读不新增任务）。
+前置需执行 `python scripts/seed_org_demo.py` 建立演示组织。
 
 ### 数据库迁移
 
@@ -446,14 +447,15 @@ alembic downgrade -1
 - [x] 对话/消息/任务落库 + `/chat/history` 真实历史
 - [x] 审计/TraceId 中间件启用，写操作落 `audit_logs`
 - [x] RAG 制度问答闭环（Chroma 服务/嵌入式双模式 + 超时降级）
-- [x] 下游开发桩 + 端到端冒烟（9 步全通过）
+- [x] 下游开发桩 + 端到端冒烟（10 步全通过）
 - [x] 转人工落地（会话状态 + 消息落库 + 属主校验 + 通知）
 - [x] **LLM 接入（DeepSeek）**：意图识别、槽位抽取、**回复生成**（`Orchestrator._compose_reply`），LLM 不可用时自动回退规则/模板
 - [x] 环境一键重建与数据备份脚本（`scripts/setup_dev_env.sh` / `scripts/db_backup.sh`）
-- [x] 单元测试（223 个通过；另有 17 个真实 PG 集成用例）
+- [x] **状态查询闭环**（`status_query`：查单据进度/假期余额，归属下推 SQL，只读不建任务）
+- [x] 单元测试（304 个通过；另有 27 个真实 PG 集成用例）
 - [ ] RAG 嵌入模型落地（当前向量检索超时降级；DeepSeek 无 embedding API，需另配嵌入服务或本地模型）
 - [ ] 制度问答回复由 LLM 润色（当前 `compose_policy_answer` 仍为模板拼装，但保留引用来源）
-- [ ] `status_query`（查进度/余额）闭环（意图已识别，尚未消费）
+- [ ] 状态查询的跨用户查询（场景 TC006：管理员查他人，需 `query_target` 与姓名解析）
 - [ ] 真实 OA 审批回调（`/approvals/callback`）与 Celery 轮询
 - [ ] WebSocket 实时对话
 - [ ] Prometheus 指标接入

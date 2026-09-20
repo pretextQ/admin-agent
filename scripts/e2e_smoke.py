@@ -6,10 +6,12 @@
 2. 开发桩已启动：`python scripts/dev_stubs.py`
 3. 后端已启动：`uvicorn app.admin_ai.main:app --port 8000`
 
-覆盖 9 步，两条主链路都走**真实审批路由**（评审 B-2）：
+覆盖 11 步，两条主链路都走**真实审批路由**（评审 B-2）：
 - 请假（≤2 天）→ 审批链：部门主管单级（无需二次确认卡片）
 - 报销（≤2000 元）→ 二次确认卡片 → 审批链：部门主管单级
 两者都由普通员工 emp999 提交、路由到其部门主管 admin001（而非「首个管理员」）并审批通过。
+末两步验证状态查询（场景 REQ-03）：返回真实单据进度与假期余额、只读查询不新增任务，
+且回复里告知用户的受理编号能反过来查到该单据。
 
 用法：`PYTHONPATH=. python scripts/e2e_smoke.py`，全部通过退出码为 0。
 """
@@ -128,6 +130,64 @@ async def main() -> int:
         print(f"[9] 会话历史: total={history['total']}")
         if history["total"] < 2:
             failures.append("会话消息未落库")
+
+        # 10. 状态查询（场景 REQ-03）：查真实单据进度与假期余额，且只读不建任务
+        before_total = (await c.get("/tasks/my")).json()["data"]["total"]
+        status_conv = f"e2e-status-{run_id}"
+
+        reply = (
+            await c.post("/chat/send", json={
+                "message": "我的报销到哪一步了",
+                "conversation_id": status_conv,
+            })
+        ).json()["data"]
+        print(f"[10] 报销进度查询: {reply['content'][:60]}")
+        if "正在为您查询状态" in reply["content"]:
+            failures.append("状态查询仍是占位实现（needs_status_query 未被消费）")
+        if "已完成" not in reply["content"]:
+            failures.append("报销在 [8] 已审批通过，状态查询应返回已完成")
+
+        reply = (
+            await c.post("/chat/send", json={
+                "message": "我还剩几天年假",
+                "conversation_id": status_conv,
+            })
+        ).json()["data"]
+        print(f"[10] 假期余额查询: {reply['content'][:60]}")
+        if "年假" not in reply["content"] or "数据来源" not in reply["content"]:
+            failures.append("假期余额查询未返回余额与数据来源")
+
+        after_total = (await c.get("/tasks/my")).json()["data"]["total"]
+        if after_total != before_total:
+            failures.append(
+                f"只读查询不应新增任务：before={before_total}, after={after_total}"
+            )
+
+        # 11. 受理编号可查：回复里告诉用户的编号必须能查回来（否则用户拿着编号查不到单据）
+        expense_task = next(
+            (t for t in (await c.get("/tasks/my")).json()["data"]["items"]
+             if t["type"] == "expense"),
+            None,
+        )
+        if expense_task is None:
+            failures.append("找不到报销任务，无法验证受理编号")
+        else:
+            detail = (await c.get(f"/tasks/{expense_task['id']}")).json()["data"]
+            receipt = detail.get("external_id")
+            if not receipt:
+                failures.append("任务未回填受理编号（external_id 为空）")
+            else:
+                reply = (
+                    await c.post("/chat/send", json={
+                        "message": f"查询任务 {receipt} 的状态",
+                        "conversation_id": status_conv,
+                    })
+                ).json()["data"]
+                print(f"[11] 受理编号查询: {reply['content'][:60]}")
+                if receipt not in reply["content"]:
+                    failures.append(f"按受理编号 {receipt} 查不到单据")
+                if "第1步" not in reply["content"]:
+                    failures.append("单据详情未带出审批链")
 
     print()
     if failures:

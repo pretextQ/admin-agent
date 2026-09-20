@@ -366,6 +366,30 @@ async def test_llm_reply_prompt_receives_execution_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_receipt_id_returned_for_task() -> None:
+    """工具返回的受理编号要随结果回传，API 层才能落到任务的 external_id。
+
+    回复里已经把「受理编号 MOCK-xxxx」告诉了用户，用户就得能拿这个编号查进度。
+    """
+    orchestrator = _orchestrator_with_tool(None)
+    orchestrator.tool_registry.get_tool.return_value.execute.return_value = ToolResult.text(
+        str({"code": 0, "data": {"external_id": "MOCK-2046C424"}})
+    )
+    result = await orchestrator.process("", _confirmed_leave_context())
+
+    assert result["external_id"] == "MOCK-2046C424"
+
+
+@pytest.mark.asyncio
+async def test_no_receipt_id_when_tool_returns_plain_text() -> None:
+    """下游没给编号时不硬塞 external_id 字段。"""
+    orchestrator = _orchestrator_with_tool(None)
+    result = await orchestrator.process("", _confirmed_leave_context())
+
+    assert "external_id" not in result
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_never_logs_user_message() -> None:
     """应用日志不得写入用户消息原文。
 
@@ -388,3 +412,152 @@ async def test_orchestrator_never_logs_user_message() -> None:
     dumped = json.dumps(logs, ensure_ascii=False, default=str)
     assert "13812345678" not in dumped, "日志中出现用户原文（L3 明文禁令）"
     assert "帮我查制度" not in dumped, "日志中出现用户原文（L3 明文禁令）"
+
+
+# ------------------------------------------------------- 状态查询（场景 REQ-03）
+
+
+@pytest.mark.asyncio
+async def test_status_query_marks_for_api_layer(orchestrator: Orchestrator) -> None:
+    """状态查询不在编排器内查库：返回标记与查询类型，由 API 层用真实结果填充。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "status_query",
+        "confidence": 0.95,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("我的报销到哪一步了", context)
+
+    assert result.get("needs_status_query") is True
+    assert result["status_query"]["query_type"] == "报销状态"
+    assert context.state == AgentState.COMPLETED
+    # 查询参数不得写进 slots：slots 会持久化并随下轮业务混入任务 data
+    assert context.slots == {}
+    # 状态查询是只读的，不得走工具调用
+    orchestrator.tool_registry.get_tool.assert_not_called()
+    orchestrator.rule_engine.validate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_status_query_without_type_asks(orchestrator: Orchestrator) -> None:
+    """未指定查询类型时追问，不猜某一类（场景 03 TC008）。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "status_query",
+        "confidence": 0.9,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("查询状态", context)
+
+    assert result.get("needs_status_query") is not True
+    assert result.get("requires_action") is True
+    assert result.get("missing_slots") == ["query_type"]
+    assert "查询哪方面" in result["content"]
+    assert context.awaiting_slots is True
+    assert context.state == AgentState.SLOT_FILLING
+
+
+@pytest.mark.asyncio
+async def test_status_query_resumes_without_reintent(orchestrator: Orchestrator) -> None:
+    """追问后用户只回「假期余额」：不再识别意图，直接按状态查询继续。
+
+    status_query 没有 business_type，若按旧口径判续填会退回意图识别，
+    把补充的类型当成新请求（历史上其他业务有同类前科）。
+    """
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "other",
+        "confidence": 0.3,
+    }
+    context = AgentContext(
+        user_id="u1",
+        conversation_id="c1",
+        intent="status_query",
+        business_type=None,
+        awaiting_slots=True,
+    )
+    result = await orchestrator.process("假期余额", context)
+
+    orchestrator.intent_recognizer.recognize.assert_not_called()
+    assert result.get("needs_status_query") is True
+    assert result["status_query"]["query_type"] == "假期余额"
+    assert context.awaiting_slots is False
+
+
+@pytest.mark.asyncio
+async def test_status_query_extracts_task_ref(orchestrator: Orchestrator) -> None:
+    """消息里带单据号时一并带出，供 API 层精确查询。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "status_query",
+        "confidence": 0.95,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("查询任务 MOCK-2046C424 的状态", context)
+
+    assert result["status_query"]["task_id"] == "MOCK-2046C424"
+
+
+@pytest.mark.asyncio
+async def test_status_query_uses_llm_hint(orchestrator: Orchestrator) -> None:
+    """意图识别给出的 query_type 优先于关键词推断。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "status_query",
+        "query_type": "任务进度",
+        "confidence": 0.95,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("我的报销到哪一步了", context)
+
+    assert result["status_query"]["query_type"] == "任务进度"
+
+
+@pytest.mark.asyncio
+async def test_status_query_creates_no_task(orchestrator: Orchestrator) -> None:
+    """状态查询不得返回 task_type，否则 API 层会为只读查询建一条任务记录。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "status_query",
+        "confidence": 0.95,
+    }
+    context = AgentContext(user_id="u1", conversation_id="c1")
+    result = await orchestrator.process("我的任务进度", context)
+
+    assert result.get("task_type") is None
+    assert result.get("slots") is None
+
+
+@pytest.mark.asyncio
+async def test_status_query_ignores_stale_query_type(orchestrator: Orchestrator) -> None:
+    """上一轮的查询类型不得影响本轮：用户改问另一类时按新问题回答。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "status_query",
+        "confidence": 0.95,
+    }
+    context = AgentContext(
+        user_id="u1",
+        conversation_id="c1",
+        slots={"query_type": "报销状态", "task_id": "MOCK-OLD"},
+    )
+    result = await orchestrator.process("我还剩几天年假", context)
+
+    assert result["status_query"]["query_type"] == "假期余额"
+    # 单据号只在本轮消息里出现才有效，否则会退化成上一轮的精确查询
+    assert result["status_query"]["task_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_status_query_resume_falls_back_to_new_intent(
+    orchestrator: Orchestrator,
+) -> None:
+    """等查询类型时用户改口提新请求：不该继续追问类型，应按新请求重新识别。"""
+    orchestrator.intent_recognizer.recognize.return_value = {
+        "intent": "leave_request",
+        "confidence": 0.95,
+    }
+    orchestrator.slot_extractor.extract.return_value = {}
+    orchestrator.slot_extractor.check_completeness.return_value = ["start_date"]
+
+    context = AgentContext(
+        user_id="u1", conversation_id="c1", intent="status_query", awaiting_slots=True
+    )
+    result = await orchestrator.process("我要请假", context)
+
+    orchestrator.intent_recognizer.recognize.assert_called_once()
+    assert result.get("needs_status_query") is not True
+    assert result.get("missing_slots") == ["start_date"]

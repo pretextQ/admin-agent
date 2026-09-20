@@ -16,6 +16,11 @@ from app.admin_ai.core.agent.intent import IntentRecognizer
 from app.admin_ai.core.agent.prompt import REPLY_PROMPT
 from app.admin_ai.core.agent.slot import SlotExtractor
 from app.admin_ai.core.rules.engine import RuleEngine
+from app.admin_ai.core.status_query import (
+    ASK_QUERY_TYPE,
+    extract_task_ref,
+    normalize_query_type,
+)
 from app.admin_ai.core.tools.registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
@@ -57,6 +62,9 @@ INTENT_TO_BUSINESS = {
 
 # 高风险业务类型
 HIGH_RISK_TYPES = {"expense", "seal"}
+
+# 状态查询（场景 REQ-03）在 API 层执行只读聚合，此处只做标记与兜底文案
+STATUS_QUERY_PLACEHOLDER = "正在为您查询状态..."
 
 # 缺失槽位对应的追问话术
 SLOT_QUESTIONS = {
@@ -155,8 +163,21 @@ class Orchestrator:
             if context.confirmed and context.business_type:
                 return await self._execute_confirmed(context)
 
-            # 正在续填槽位时，不再重新识别意图，直接在既有业务上继续抽取
-            resume_slot_filling = bool(context.business_type and context.awaiting_slots)
+            # 正在续填槽位时，不再重新识别意图，直接在既有业务上继续抽取。
+            # status_query 没有 business_type，但同样可能只补了「查询类型」，故续填判定
+            # 显式带上它；且要求本轮消息确实答出了查询类型——否则（如追问后改口说
+            # 「我要请假」）应放弃续填、按新请求重新识别，不能把用户困在追问里。
+            resume_slot_filling = bool(
+                context.awaiting_slots
+                and (
+                    context.business_type
+                    or (
+                        context.intent == "status_query"
+                        and normalize_query_type(user_message) is not None
+                    )
+                )
+            )
+            query_type_hint: Optional[str] = None
 
             if not resume_slot_filling:
                 # 1. 意图识别
@@ -170,6 +191,7 @@ class Orchestrator:
                 )
                 context.intent = intent_result["intent"]
                 context.business_type = INTENT_TO_BUSINESS.get(context.intent)
+                query_type_hint = intent_result.get("query_type")
 
                 # 2. 问候直接回复
                 if context.intent == "greeting":
@@ -188,12 +210,7 @@ class Orchestrator:
                             }
                     return {"content": "正在为您查询相关制度...", "needs_rag": True}
 
-                # 4. 状态查询
-                if context.intent == "status_query":
-                    context.state = AgentState.COMPLETED
-                    return {"content": "正在为您查询状态...", "needs_status_query": True}
-
-                # 5. 未知意图走转人工
+                # 4. 未知意图走转人工（status_query 由下方分支处理，不在此列）
                 if context.intent == "other" or (
                     context.business_type is None
                     and context.intent not in ("greeting", "policy_query", "status_query")
@@ -203,6 +220,11 @@ class Orchestrator:
                         "content": "抱歉，我暂时无法理解您的需求，正在为您转接人工客服。",
                         "transfer_to_human": True,
                     }
+
+            # 5. 状态查询（场景 REQ-03）：只读聚合需要数据库会话，本层没有，
+            #    因此只识别查询类型与单据号，实际查询由 API 层执行。
+            if context.intent == "status_query":
+                return self._prepare_status_query(user_message, context, query_type_hint)
 
             # 6. 槽位抽取
             context.state = AgentState.SLOT_FILLING
@@ -261,6 +283,40 @@ class Orchestrator:
             context.state = AgentState.FAILED
             return {"content": "抱歉，处理过程中出现错误，请稍后重试"}
 
+    def _prepare_status_query(
+        self,
+        user_message: str,
+        context: AgentContext,
+        query_type_hint: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """准备一次状态查询：定查询类型、取单据号，缺类型则追问。
+
+        这里是纯识别，不触碰数据库——只读聚合由 API 层执行（`StatusQueryService`）。
+
+        查询参数走返回值而不是 `context.slots`：slots 会被持久化到会话状态，并随下一轮
+        其他业务进入任务 `data`，把「上次查了哪一类」污染成单据字段。参数只取本轮信息
+        （LLM 本轮的判定 + 用户原话），不沿用上一轮残留。
+        """
+        query_type = normalize_query_type(query_type_hint, user_message)
+        if query_type is None:
+            # 不猜用户想查哪一类（场景 03 TC008：未指定类型应澄清）
+            context.state = AgentState.SLOT_FILLING
+            context.awaiting_slots = True
+            return {
+                "content": ASK_QUERY_TYPE,
+                "requires_action": True,
+                "missing_slots": ["query_type"],
+            }
+
+        context.awaiting_slots = False
+        context.state = AgentState.COMPLETED
+        # 先给兜底文案，API 层拿到真实结果后替换；替换失败时用户也不会看到空回复
+        return {
+            "content": STATUS_QUERY_PLACEHOLDER,
+            "needs_status_query": True,
+            "status_query": {"query_type": query_type, "task_id": extract_task_ref(user_message)},
+        }
+
     async def _execute_confirmed(self, context: AgentContext) -> dict[str, Any]:
         """确认后恢复执行工具。"""
         context.state = AgentState.EXECUTING
@@ -308,6 +364,7 @@ class Orchestrator:
                 "tool": context.business_type,
                 "input": context.slots,
                 "output": result.content,
+                "external_id": result.external_id,
             })
             if result.is_error:
                 context.state = AgentState.TRANSFERRED
@@ -324,8 +381,13 @@ class Orchestrator:
                 }
 
         context.state = AgentState.COMPLETED
-        return {
+        result: dict[str, Any] = {
             "content": await self._compose_reply(context, "操作已完成"),
             "task_type": context.business_type,
             "slots": context.slots,
         }
+        # 下游受理编号随结果回传，供 API 层落到任务 external_id——
+        # 回复里已经把它告诉用户了，用户就得能拿它查进度
+        if context.tool_calls and context.tool_calls[-1].get("external_id"):
+            result["external_id"] = context.tool_calls[-1]["external_id"]
+        return result

@@ -29,8 +29,10 @@ from app.admin_ai.core.approval.repository import (
 )
 from app.admin_ai.core.approval.router import RoutingError
 from app.admin_ai.core.auth.deps import get_current_user
+from app.admin_ai.core.status_query import QUERY_FAILED, StatusQueryService
 from app.admin_ai.db.database import get_db_session
 from app.admin_ai.db.models import (
+    AuditLogModel,
     ConversationModel,
     ConversationStatus,
     MessageModel,
@@ -223,6 +225,7 @@ async def _save_chat_turn(
                 type=task_type,
                 title=_build_task_title(business_type, slots),
                 data=slots,
+                external_id=result.get("external_id"),
                 risk_level=_risk_level(needs_confirmation, needs_approval),
                 requires_confirmation=needs_confirmation,
             )
@@ -240,6 +243,46 @@ async def _save_chat_turn(
             else:
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = utc_now()
+
+
+async def _answer_status_query(
+    db: AsyncSession,
+    request: Request,
+    current_user: dict,
+    result: dict,
+    message: str,
+    conversation_id: str,
+) -> None:
+    """执行只读状态查询（场景 REQ-03）并把结果填进回复。
+
+    编排器没有数据库会话，故查询在此完成。归属一律限定为当前用户本人；
+    审计只记查询类型与结果条数，不记查询内容与单据明细。查询失败降级为提示，
+    不让只读查询把整轮对话带崩（硬约定 #11 的同一精神）。
+    """
+    service = StatusQueryService(
+        tool_registry=getattr(request.app.state, "tool_registry", None)
+    )
+    try:
+        outcome = await service.answer(
+            db,
+            user_id=current_user["user_id"],
+            slots=result.get("status_query") or {},
+            message=message,
+        )
+    except Exception as exc:  # noqa: BLE001 - 查询失败不得中断会话
+        logger.error("状态查询失败", error=str(exc))
+        result["content"] = QUERY_FAILED
+        return
+
+    result["content"] = outcome.content
+    db.add(AuditLogModel(
+        user_id=current_user["user_id"],
+        conversation_id=conversation_id,
+        action="status_query",
+        resource_type="tasks",
+        decision=f"query_type={outcome.query_type}",
+        output_data={"result_count": outcome.result_count},
+    ))
 
 
 def _risk_level(needs_confirmation: bool, needs_approval: bool) -> str:
@@ -274,6 +317,10 @@ async def send_message(
         awaiting_slots=state.awaiting_slots,
     )
     result = await orchestrator.process(payload.message, context, payload.attachments)
+    if result.get("needs_status_query"):
+        await _answer_status_query(
+            db, request, current_user, result, payload.message, conversation_id
+        )
     await store.save(conversation_id, _build_conversation_state(context, result, current_user["user_id"]))
     await _save_chat_turn(db, conversation_id, current_user["user_id"], context, payload.message, result)
     await db.commit()  # 显式提交：teardown 提交发生在响应之后，会造成读写竞态
