@@ -55,6 +55,16 @@
 - 修正过期的健康检查用例：认证上线后 `/chat/send` 无 Token 应返回 401
 
 ### 文档
+- **全量文档按 Batch 5~8 状态同步（12 个文件）**：
+  README（项目状态清单、测试基线 99、脚本清单、DeepSeek 接入示例与密钥提醒、快速开始指向一键脚本）；
+  CONTRIBUTING（一键重建脚本、国内镜像、冒烟命令与提交前基线）；
+  api-spec（`/chat/transfer` 补充实现说明：校验/状态变更/消息落库/通知/错误码，并标注自动转人工路径缺口）；
+  Review 报告（版本与统计、实测结果表、追加 Batch 5~8 关闭项与最新开放清单）；
+  完善与上线指南（模块状态表重排、P0 遗留清单更新为嵌入模型/密钥治理/lint 债）；
+  设计计划与里程碑（第 5~10 周周计划状态按实际校对、向量化模块标注嵌入模型选型约束）；
+  部署与运维（本地开发实录改为一键脚本优先 + 手工方式，移除旧路径 `Z:\zcode`，补备份恢复与 nodejs PATH 提示）；
+  测试计划（基线 99、环境自检脚本、lint 债缺口）；开发规范（新增四条硬约定：shell 行尾 LF / MSYS 路径 / psql UTF8 / 密钥不入库）；
+  前端技术方案（审批操作由「待开发」更正为已实现）；架构与需求文档（顶部加实现状态指引，避免与实现进度混淆）
 - **交接说明按 2026-09-20 环境重建同步**：项目路径由 `Z:\zcode\admin-ai-agent` 迁至 `D:\NF\Test\Kit\admin-ai-agent`；PostgreSQL 由 Windows 服务改为 `D:\NF\Tools\pgsql` 绿色二进制（`pg_ctl` 手动启停，数据目录 `D:\NF\Tools\pgsql\pgdata`，trust 认证）；Python 运行时改为 uv 隔离管理的 3.12.14（系统 3.8 保持不动）；Redis 迁至 `D:\NF\Redis`；新增两条踩坑速查（Node/pnpm 的 Windows PATH 陷阱、MSYS 把 `/d/xxx` 当盘符相对路径）
 - 环境核验 7 项全绿记录：PG/Redis/开发桩/后端 healthy、`pytest` 91 passed 1 deselected、`e2e_smoke` 9/9、前端构建成功
 - 本地 `.env` 已配好智谱 OpenAI 兼容端点（`open.bigmodel.cn/api/paas/v4/`、`glm-4-flash`），仅待填入有效 `OPENAI_API_KEY`（当前走规则回退）

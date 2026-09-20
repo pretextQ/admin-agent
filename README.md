@@ -58,7 +58,7 @@ Admin AI Agent 是一套面向企业内部员工的 **AI 行政智能助理**。
 | 数据库 | PostgreSQL 15+ / SQLAlchemy 2.0 (async) | 主数据存储 |
 | 缓存 / 会话 | Redis 7+ | 会话状态、限流 |
 | 向量库 | ChromaDB + sentence-transformers | RAG 知识检索 |
-| LLM | OpenAI 兼容 API | 意图识别、对话生成 |
+| LLM | DeepSeek（OpenAI 兼容协议） | 意图识别、槽位抽取、回复生成 |
 | 任务队列 | Celery + Redis | 异步任务（通知、批量入库） |
 | 迁移 | Alembic | 数据库版本管理 |
 | 可观测性 | structlog + Prometheus | 结构化日志与指标 |
@@ -129,6 +129,8 @@ admin-ai-agent/
 │   └── versions/                           001_initial_tables
 │
 ├── scripts/                                运维脚本
+│   ├── setup_dev_env.sh                    开发环境一键重建（换机器用，幂等）
+│   ├── db_backup.sh                        数据库备份 / 恢复
 │   ├── seed_admin.py                       管理员账号初始化
 │   ├── dev_stubs.py                        下游微服务开发桩（8001/8002/8003）
 │   └── e2e_smoke.py                        端到端冒烟脚本
@@ -188,6 +190,10 @@ admin-ai-agent/
 ---
 
 ## 快速开始
+
+> **换机器 / 全新环境**：可直接跑 `bash scripts/setup_dev_env.sh`（幂等）——自动检查安装 uv、
+> 创建 venv 并装依赖、生成 `.env`、检测并拉起 PostgreSQL/Redis、建库迁移种子并跑测试；
+> 加 `--check` 只体检不安装。下面的手工步骤适合理解各环节或做定制。
 
 ### 1. 克隆项目
 
@@ -365,6 +371,13 @@ alembic downgrade -1
 
 完整清单见 [.env.example](.env.example)。
 
+> **LLM 接入示例（DeepSeek）**：`.env` 中填
+> `OPENAI_API_KEY=<你的 Key>`、`OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-flash`。
+> 任何 OpenAI 兼容服务均可（只换 base_url 与模型名，代码无需改动）。
+> 未配置 Key 时服务照常运行，自动降级为规则回退 + 模板回复。
+> ⚠️ 注意：DeepSeek 不提供 embedding API，RAG 向量化需另配嵌入服务或本地模型。
+> ⚠️ Key 只放在本地 `.env`（已被 `.gitignore` 忽略），**不要提交**。
+
 ---
 
 ## 文档
@@ -409,12 +422,18 @@ alembic downgrade -1
 - [x] 审计/TraceId 中间件启用，写操作落 `audit_logs`
 - [x] RAG 制度问答闭环（Chroma 服务/嵌入式双模式 + 超时降级）
 - [x] 下游开发桩 + 端到端冒烟（9 步全通过）
-- [x] 单元测试（91 个通过）
-- [ ] LLM 回复生成接入（当前为模板拼装，LLM 仅用于意图/槽位）
+- [x] 转人工落地（会话状态 + 消息落库 + 属主校验 + 通知）
+- [x] **LLM 接入（DeepSeek）**：意图识别、槽位抽取、**回复生成**（`Orchestrator._compose_reply`），LLM 不可用时自动回退规则/模板
+- [x] 环境一键重建与数据备份脚本（`scripts/setup_dev_env.sh` / `scripts/db_backup.sh`）
+- [x] 单元测试（99 个通过）
+- [ ] RAG 嵌入模型落地（当前向量检索超时降级；DeepSeek 无 embedding API，需另配嵌入服务或本地模型）
+- [ ] 制度问答回复由 LLM 润色（当前 `compose_policy_answer` 仍为模板拼装，但保留引用来源）
+- [ ] `status_query`（查进度/余额）闭环（意图已识别，尚未消费）
 - [ ] 真实 OA 审批回调（`/approvals/callback`）与 Celery 轮询
 - [ ] WebSocket 实时对话
 - [ ] Prometheus 指标接入
 - [ ] Docker 部署文件落地
+- [ ] lint/format 债清理（`ruff check` 约 336 项，详见交接文档 P2）
 - [ ] 上线部署
 
 ### 前端

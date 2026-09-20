@@ -1,6 +1,6 @@
 # Admin AI Agent 项目代码 Review 报告
 
-> 版本：V1.0　|　日期：2026-09-17　|　类型：代码评审与整改建议
+> 版本：V1.1　|　日期：2026-09-20（追加 Batch 5~8 进展；评审基线为 2026-09-17）
 > 评审范围：后端 `app/`、前端 `frontend/`、`migrations/`、`tests/`、`scripts/`、`docs/`
 > 评审方法：全量静态通读 + 实测（pytest / tsc / oxlint / vite build）+ 文档与实现交叉比对
 
@@ -12,30 +12,38 @@
 
 评审时的初始状态存在多个「代码看起来通了、实际跑不通」的阻断问题：LLM 未接入、多轮对话状态不落库、任务/会话/审计不落库、高风险确认链路断裂、前端 OAuth 回调必然失败。
 
-- **Batch 1（核心链路打通）已完成并提交**，主链路「对话 → 多轮补全 → 规则校验 → 高风险确认 → 工具执行」已可运行，测试 51 通过。
-- **Batch 2（安全与持久化）、Batch 3（能力补齐）、Batch 4（审批闭环与端到端验证）已完成并提交**（328f730 / f824e75 / 1933b81），P0 全部关闭，P1 大部分关闭，整改明细见文末附录。
+- **Batch 1（核心链路打通）已完成并提交**，主链路「对话 → 多轮补全 → 规则校验 → 高风险确认 → 工具执行」已可运行。
+- **Batch 2（安全与持久化）、Batch 3（能力补齐）、Batch 4（审批闭环与端到端验证）已完成并提交**（328f730 / f824e75 / 1933b81），P0 全部关闭，P1 大部分关闭。
+- **Batch 5~8 已完成并提交**（acef1be / b245cb0 / 063d0a9 / ae6aa89 / 802e3a8 / ce5ba7a）：
+  转人工真实落地、环境一键重建与数据备份脚本、**LLM 接入 DeepSeek（意图/槽位/回复生成）**；
+  测试基线升至 99 passed，E2E 冒烟 9/9 在真实 LLM 下通过。整改明细见文末附录。
 
 ### 问题分级统计（评审基线与当前状态）
 
 | 级别 | 数量 | 说明 | 当前状态 |
 |------|------|------|----------|
-| P0 阻断 | 6 | 主流程无法完成 | ✅ 全部关闭（含落库项，Batch 2 完成） |
-| P1 安全/正确性 | 14 | 越权、审计缺失、状态不一致 | 11 项已关闭（R-07/08/09/12/14/15/17部分/18/20/21部分/29），明细见附录 |
-| P2 工程一致性 | 10 | 死代码、文档失真、缺部署文件 | 3 项已关闭（R-21 部分/R-25/R-26），其余待处理 |
+| P0 阻断 | 6 | 主流程无法完成 | ✅ 全部关闭 |
+| P1 安全/正确性 | 14 | 越权、审计缺失、状态不一致 | 13 项已关闭（R-19 Prometheus 仍开放；R-10 部分） |
+| P2 工程一致性 | 10 | 死代码、文档失真、缺部署文件 | 5 项已关闭（R-21 部分/R-25/R-26/R-27/R-29），其余待处理 |
+| 新发现（评审未覆盖） | 3 | 真实环境才暴露 | 2 已修复（PG 枚举、RESP3、提交竞态）+ 1 待清（ruff 336 项 lint 债） |
 
 ---
 
 ## 二、验证环境与实测结果
 
-| 项 | 命令 | 初始结果 | 当前结果 |
+| 项 | 命令 | 初始结果 | 当前结果（2026-09-20） |
 |----|------|----------|----------|
-| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **51 passed, 1 deselected** |
+| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **99 passed, 1 deselected** |
 | 前端类型检查 | `pnpm -C frontend exec tsc -b` | 通过 | 通过 |
 | 前端 lint | `pnpm -C frontend lint` | 0 error / 1 warning | 0 error / 1 warning |
-| 前端构建 | `pnpm -C frontend build` | 通过 | 通过（沙箱下需放宽权限，见附录） |
+| 前端构建 | `pnpm -C frontend build` | 通过 | 通过 |
+| 端到端冒烟 | `PYTHONPATH=. python scripts/e2e_smoke.py` | 未实现 | **9/9 通过（真实 DeepSeek）** |
 | 集成用例 | `pytest -m integration` | 需 asyncpg/DB | 可显式选中（1 条） |
+| lint/format | `ruff check app/ tests/` | 未执行 | 336 项待清（287 可自动修，详见交接文档 P2-15） |
 
-> 注意：本机 Python 为 3.8.10，而 `pyproject.toml` 要求 `>=3.11`；且未安装 `asyncpg`，故集成用例默认不跑。CI 环境应以 3.11+ 并配齐服务。
+> 环境说明：开发机系统 Python 为 3.8.10，本项目**用 uv 隔离安装 Python 3.12** 并建 `.venv`
+> （不干扰系统 3.8）。真实依赖（PostgreSQL 16 / Redis / 开发桩 / LLM Key）已配齐，
+> 一键重建见 `scripts/setup_dev_env.sh`。
 
 ---
 
@@ -287,6 +295,27 @@ pnpm -C frontend build
 | redis-py 8 RESP3 握手被 Windows Redis 5 拒绝 | 所有 `from_url` 显式 `protocol=2` | 1933b81 |
 | teardown 提交在响应之后造成读写竞态 | 对话接口端点内显式 commit | 1933b81 |
 
+### Batch 5~8 关闭项（2026-09-20）
+
+| 项 | 问题 | 处理方式 | 提交 |
+|----|------|----------|------|
+| 转人工 | `/chat/transfer` 为假话术、无校验、不落库，任何登录用户可对他人会话发起 | 校验会话存在（40004）与属主（40003）；置 `conversations.status=transferred`、写历史消息（meta 含 reason）、清除待确认状态、调用通知服务；真实 PG 端到端验证 | acef1be |
+| R-02 | LLM 从未接入（仅规则回退） | 接入 DeepSeek：意图识别 + 槽位抽取 + **回复生成**（`Orchestrator._compose_reply`）；未配 Key 或调用失败自动回退，不阻断流程 | ae6aa89 / ce5ba7a |
+| R-27 | `.env.example` 注释与 Settings 不符 | 已修正（现说明与 `config.py` 定义一致） | 随批次 |
+| 新增 | 环境不可迁移：本机资产（PG/Redis/.venv）不入库，换机器需重踩全部坑 | `scripts/setup_dev_env.sh` 一键重建（幂等）+ `scripts/db_backup.sh` 数据备份恢复（含恢复前快照）；修掉 psql 的 MSYS 路径与 UTF8 编码两个真实 bug | b245cb0 |
+| 新增 | `.sh` 在 `core.autocrlf=true` 下检出为 CRLF，换机器后脚本无法执行 | 新增 `.gitattributes` 锁定 `*.sh text eol=lf`，并 clone 实测验证 | 063d0a9 |
+
 ### 仍然开放
 
-R-10（OAuth state 静默跳过）、R-11（审批状态取值前后端不一致）、R-13（规则引擎健壮性）、R-16（status_query 占位）、R-19（Prometheus）、R-22/R-23/R-24/R-27/R-28/R-30/R-31，以及 D-01/D-02 决策。
+**P1 级**：R-10（OAuth state 校验失败时静默跳过，开发环境可接受但生产需收紧）、
+R-11（审批状态取值前后端不一致）、R-13（规则引擎类型健壮性）、R-16（`status_query` 仍为占位，意图已识别无消费方）、
+R-19（Prometheus 指标未接入）。
+
+**P2 级**：R-21（services 层仍为死代码，`notification_service` 已被转人工调用）、R-22（前端模板残留样式）、
+R-23（Docker/nginx 部署文件缺失）、R-24（`langchain*`/`celery` 声明未使用）、R-28（requirements 生成方式说明）、
+R-30（mypy 严格模式未验证）、R-31（覆盖率未达声明门槛）。
+
+**新开放**：ruff lint/format 债 336 项（含 FastAPI `B008` 误报需配置豁免，做法见交接文档 P2-15）；
+RAG 嵌入模型未定（DeepSeek 无 embedding API）；编排器自动转人工路径未通知人工客服。
+
+**开放决策**：D-01（`/chat/confirm` 规范用 `task_id`、实现用 `conversation_id`）、D-02（LLM 供应商/超时/成本口径）。

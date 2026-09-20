@@ -277,6 +277,18 @@
 }
 ```
 
+响应 `data` 与 `/chat/send` 同构（`conversation_id` / `message_id` / `content`）。
+
+> **实现说明（2026-09-20 落地）**：端点会
+> ① 校验会话存在（不存在返回 `40004`）与操作者为会话属主（越权返回 `40003`）；
+> ② 置 `conversations.status = transferred`；
+> ③ 写入一条 assistant 历史消息，`meta` 含 `transfer_to_human: true` 与 `reason`；
+> ④ 清除该会话的待确认状态（人工介入期间不允许再通过 `/chat/confirm` 自动执行高风险操作）；
+> ⑤ 调用通知服务提醒人工客服（当前 `NotificationService` 仅打日志，真实推送待接）。
+>
+> 另有一条**自动转人工**路径：编排器识别不出意图时（`intent=other`）会直接转人工，
+> 该路径同样标记会话状态与消息，但**尚未调用通知服务**（已知小缺口）。
+
 ---
 
 ## 五、文件接口

@@ -82,20 +82,29 @@ git checkout -b feature/你的功能名称
 
 ### 3. 准备环境（uv）
 
+> **快捷方式（Windows + Git Bash 已验证）**：直接跑 `bash scripts/setup_dev_env.sh`，
+> 它会检查/安装 uv、创建 venv 装依赖、生成 `.env`、检测并拉起 PostgreSQL/Redis、
+> 建库迁移种子并跑测试；加 `--check` 只体检不安装。幂等，可反复执行。
+> 下面是等价的手工步骤。
+
 ```bash
 # 安装 uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # 或
 pip install uv
 
-# 创建并激活虚拟环境
-uv venv
+# 创建并激活虚拟环境（建议显式指定 3.12）
+uv venv --python 3.12
 source .venv/bin/activate  # Linux/macOS
 # 或
 .venv\Scripts\activate  # Windows
 
 # 安装依赖（含开发依赖）
 uv pip install -r requirements-dev.txt
+
+# 国内网络受限时走镜像：
+# uv pip install -r requirements-dev.txt --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+# uv 安装 Python 用：UV_PYTHON_INSTALL_MIRROR=https://registry.npmmirror.com/-/binary/python-build-standalone
 ```
 
 > **pip 替代方案（不推荐）**：`python -m venv .venv && pip install -r requirements-dev.txt`。
@@ -126,7 +135,13 @@ pytest --cov=app --cov-report=term-missing
 # 集成测试 / 端到端测试
 pytest -m integration
 pytest -m e2e
+
+# 端到端冒烟（需 PG/Redis/开发桩/后端 均已启动）
+PYTHONPATH=. python scripts/e2e_smoke.py
 ```
+
+> 提交前请确保 `pytest` 全绿（当前基线：99 passed, 1 deselected）。
+> 涉及主链路（对话/编排/工具/审批）的改动，建议再跑一次 `scripts/e2e_smoke.py`。
 
 ### 5. 提交代码
 
