@@ -39,7 +39,7 @@
 | 前端构建 | `pnpm -C frontend build` | 通过 | 通过 |
 | 端到端冒烟 | `PYTHONPATH=. python scripts/e2e_smoke.py` | 未实现 | **9/9 通过（真实 DeepSeek）** |
 | 集成用例 | `pytest -m integration` | 需 asyncpg/DB | 可显式选中（1 条） |
-| lint/format | `ruff check app/ tests/` | 未执行 | 336 项待清（287 可自动修，详见交接文档 P2-15） |
+| lint/format | `ruff check app/ tests/` | 未执行 | 336 项待清（287 可自动修，详见交接文档 P2-14） |
 
 > 环境说明：开发机系统 Python 为 3.8.10，本项目**用 uv 隔离安装 Python 3.12** 并建 `.venv`
 > （不干扰系统 3.8）。真实依赖（PostgreSQL 16 / Redis / 开发桩 / LLM Key）已配齐，
@@ -315,7 +315,7 @@ R-19（Prometheus 指标未接入）。
 R-23（Docker/nginx 部署文件缺失）、R-24（`langchain*`/`celery` 声明未使用）、R-28（requirements 生成方式说明）、
 R-30（mypy 严格模式未验证）、R-31（覆盖率未达声明门槛）。
 
-**新开放**：ruff lint/format 债 336 项（含 FastAPI `B008` 误报需配置豁免，做法见交接文档 P2-15）；
+**新开放**：ruff lint/format 债 336 项（含 FastAPI `B008` 误报需配置豁免，做法见交接文档 P2-14）；
 RAG 嵌入模型未定（DeepSeek 无 embedding API）；编排器自动转人工路径未通知人工客服。
 
 **开放决策**：D-01（`/chat/confirm` 规范用 `task_id`、实现用 `conversation_id`）、D-02（LLM 供应商/超时/成本口径）。
