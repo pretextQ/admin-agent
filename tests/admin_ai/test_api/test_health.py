@@ -36,13 +36,38 @@ class TestHealthAPI:
 
     @pytest.mark.integration
     async def test_tasks_my_endpoint(self) -> None:
-        """需要数据库的集成测试。"""
+        """需要数据库的集成测试。
+
+        注意：全局 `stub_audit_db` fixture 会把 `get_session_factory` 打桩成 MagicMock，
+        而本用例要打真实 PostgreSQL，因此这里自建引擎并覆盖 `get_db_session` 依赖
+        （原实现未覆盖，导致该用例被 `-m integration` 选中时必挂）。
+        """
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from app.admin_ai.config import get_config
+        from app.admin_ai.db.database import get_db_session
+
+        engine = create_async_engine(get_config().DATABASE_URL)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
         app = create_app()
-        transport = ASGITransport(app=app)
-        token = create_access_token({"sub": "user_001", "employee_id": "EMP1001", "role": "employee"})
-        headers = {"Authorization": f"Bearer {token}"}
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/api/v1/tasks/my", headers=headers)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == 0
+
+        async def _override_db():
+            async with factory() as session:
+                yield session
+
+        app.dependency_overrides[get_db_session] = _override_db
+        try:
+            transport = ASGITransport(app=app)
+            token = create_access_token(
+                {"sub": "user_001", "employee_id": "EMP1001", "role": "employee"}
+            )
+            headers = {"Authorization": f"Bearer {token}"}
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/v1/tasks/my", headers=headers)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["code"] == 0
+            assert data["data"]["scope"] == "my"
+        finally:
+            app.dependency_overrides.clear()
+            await engine.dispose()

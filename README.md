@@ -132,6 +132,10 @@ admin-ai-agent/
 │   ├── setup_dev_env.sh                    开发环境一键重建（换机器用，幂等）
 │   ├── db_backup.sh                        数据库备份 / 恢复
 │   ├── seed_admin.py                       管理员账号初始化
+│   ├── seed_org_demo.py                    演示组织初始化（开发环境，幂等）
+│   ├── sync_org.py                         组织架构同步（HR 接口 / CSV）
+│   ├── manage_approval_rules.py            审批规则维护（列表/新增/启停/导入导出）
+│   ├── sample_org/                         组织 CSV 格式样例
 │   ├── dev_stubs.py                        下游微服务开发桩（8001/8002/8003）
 │   └── e2e_smoke.py                        端到端冒烟脚本
 │
@@ -231,6 +235,7 @@ uv pip install -r requirements-dev.txt
 # 准备数据库（需 PostgreSQL / Redis 已启动）
 alembic upgrade head
 python scripts/seed_admin.py     # 创建 admin001 管理员
+python scripts/seed_org_demo.py  # 演示组织：公司(gm001) → 技术部(admin001)，含员工 emp999
 
 # 启动下游开发桩（8001=OA，8002=财务，8003=物资；另开终端）
 python scripts/dev_stubs.py
@@ -287,8 +292,9 @@ curl "http://localhost:8000/api/v1/auth/dev-login?employee_id=admin001"
 # 获取普通员工 Token
 curl "http://localhost:8000/api/v1/auth/dev-login?employee_id=emp001"
 
-# 初始化管理员账号（首次）
+# 初始化管理员账号与演示组织（首次）
 python scripts/seed_admin.py
+python scripts/seed_org_demo.py
 ```
 
 ---
@@ -330,7 +336,9 @@ pytest -m "not slow"
 PYTHONPATH=. python scripts/e2e_smoke.py
 ```
 
-脚本覆盖 9 步：dev-login → 请假（一步补全槽位 → 工具执行 → 任务自动完成）→ 报销（确认卡片 → 确认执行 → 生成管理员审批链）→ 待审批列表 → 审批通过 → 会话历史落库。
+脚本覆盖 9 步：dev-login → 请假（一步补全槽位 → 工具执行 → 任务自动完成）→
+报销（员工 emp999 提交 → 确认执行 → **按审批规则路由到部门主管**）→ 主管待审批列表 →
+审批通过 → 会话历史落库。前置需执行 `python scripts/seed_org_demo.py` 建立演示组织。
 
 ### 数据库迁移
 
@@ -363,6 +371,9 @@ alembic downgrade -1
 | `OPENAI_BASE_URL` | LLM API 地址 | `https://api.openai.com/v1` |
 | `LLM_MODEL` | 模型名称 | `gpt-4o-mini` |
 | `LLM_REDACTION_ENABLED` | LLM 脱敏与 L4 拦截开关（**生产禁止关闭**，会 fail-fast） | `true` |
+| `ORG_SYNC_PROVIDER` | 组织数据来源：`csv` / `http`（HR 组织接口）/ `disabled` | `csv` |
+| `ORG_SYNC_CSV_DIR` | CSV 目录（格式样例见 `scripts/sample_org/`） | `data/org` |
+| `HR_ORG_BASE_URL` / `HR_ORG_TOKEN` | HR 组织接口地址与令牌（`provider=http` 时必填） | - |
 | `LLM_EXCLUDED_BUSINESS_TYPES` | 不走外部 LLM 的涉密业务类型 | `["certificate","seal"]` |
 | `REDACT_AMOUNT` | 是否连金额一并占位化 | `false` |
 | `CHROMA_HOST` / `CHROMA_PORT` | 向量库地址 | `localhost` / `8005` |
@@ -402,6 +413,7 @@ alembic downgrade -1
 | [开发规范](docs/guides/开发规范.md) | 工程流程与约束 |
 | [代码风格指南](docs/guides/代码风格指南.md) | 代码风格细则 |
 | [测试计划](docs/guides/测试计划.md) | 测试策略 |
+| [组织架构与审批路由设计](docs/architecture/组织架构与审批路由设计.md) | 部门树/审批规则/代理审批表、路由算法与兜底、上游同步（评审 B-2） |
 | [部署与运维](docs/guides/部署与运维.md) | 部署、监控、运维 |
 | [安全策略](SECURITY.md) | 安全与漏洞报告 |
 | [贡献指南](CONTRIBUTING.md) | 参与方式 |
@@ -424,6 +436,9 @@ alembic downgrade -1
 - [x] Alembic 首次迁移（7 张表）
 - [x] 对话接口接上编排器（chat.py → orchestrator.process()）
 - [x] 审批多级链（多步审批 / 加签 / 状态校验）
+- [x] **审批路由按金额与部门分级**（组织架构 + 审批规则 + 代理审批，APR-001/002）
+- [x] 组织架构同步（HR 接口 / CSV 降级，失败沿用旧快照）
+- [x] 数据归属查询范围（本人 / 本部门 / 全量，越范围访问记审计）
 - [x] 飞书 OAuth 登录（授权码模式 / dev-login）
 - [x] 多轮状态存储 + 槽位续填 + 高风险确认闭环
 - [x] 对话/消息/任务落库 + `/chat/history` 真实历史
@@ -433,7 +448,7 @@ alembic downgrade -1
 - [x] 转人工落地（会话状态 + 消息落库 + 属主校验 + 通知）
 - [x] **LLM 接入（DeepSeek）**：意图识别、槽位抽取、**回复生成**（`Orchestrator._compose_reply`），LLM 不可用时自动回退规则/模板
 - [x] 环境一键重建与数据备份脚本（`scripts/setup_dev_env.sh` / `scripts/db_backup.sh`）
-- [x] 单元测试（99 个通过）
+- [x] 单元测试（192 个通过；另有 7 个真实 PG 集成用例）
 - [ ] RAG 嵌入模型落地（当前向量检索超时降级；DeepSeek 无 embedding API，需另配嵌入服务或本地模型）
 - [ ] 制度问答回复由 LLM 润色（当前 `compose_policy_answer` 仍为模板拼装，但保留引用来源）
 - [ ] `status_query`（查进度/余额）闭环（意图已识别，尚未消费）

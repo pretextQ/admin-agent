@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from app.admin_ai.core.agent.state_store import (
     ConversationState,
     InMemoryConversationStateStore,
 )
+from app.admin_ai.core.approval.router import ApprovalStep, RoutingError, RoutingOutcome
 from app.admin_ai.core.auth.jwt_token import create_access_token
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.base import ToolResult
@@ -402,30 +403,35 @@ def _confirm_orchestrator(captured: list[Any]) -> AsyncMock:
 
 
 async def test_confirm_resumes_pending_action() -> None:
-    """高风险操作确认后应携带原槽位恢复执行，并创建待审批任务。"""
+    """高风险操作确认后应携带原槽位恢复执行，并按路由结果生成审批链。"""
     app = create_app()
     captured: list[Any] = []
     app.state.orchestrator = _confirm_orchestrator(captured)
     app.state.state_store = InMemoryConversationStateStore()
-    admin = MagicMock(spec=UserModel)
-    admin.id = "admin-1"
-    db = _install_permissive_db(app, extra_results=[_MockResult(value=admin)])
+    db = _install_permissive_db(app)
+    outcome = RoutingOutcome(steps=(
+        ApprovalStep(step=1, approver_id="director-1", source="parent_dept_manager"),
+        ApprovalStep(step=2, approver_id="manager-1", source="self_dept_manager"),
+    ))
     transport = ASGITransport(app=app)
     headers = _make_auth_headers()
 
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        send = await client.post(
-            "/api/v1/chat/send",
-            json={"message": "我要报销", "conversation_id": "conv-confirm"},
-            headers=headers,
-        )
-        assert send.json()["data"]["requires_action"] is True
+    with patch(
+        "app.admin_ai.api.chat.route_approval", AsyncMock(return_value=outcome)
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            send = await client.post(
+                "/api/v1/chat/send",
+                json={"message": "我要报销", "conversation_id": "conv-confirm"},
+                headers=headers,
+            )
+            assert send.json()["data"]["requires_action"] is True
 
-        confirm = await client.post(
-            "/api/v1/chat/confirm/conv-confirm",
-            json={"confirmed": True},
-            headers=headers,
-        )
+            confirm = await client.post(
+                "/api/v1/chat/confirm/conv-confirm",
+                json={"confirmed": True},
+                headers=headers,
+            )
 
     assert confirm.json()["data"]["content"] == "操作已完成"
     confirm_context = captured[-1]
@@ -433,17 +439,64 @@ async def test_confirm_resumes_pending_action() -> None:
     assert confirm_context.business_type == "expense"
     assert confirm_context.slots == {"expense_type": "酒店", "amount": 500}
 
-    # 确认执行成功后创建高风险任务并生成管理员审批链
+    # 确认执行成功后创建高风险任务，审批链来自路由结果（不再是「首个管理员」）
     task_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], TaskModel)]
     assert len(task_adds) == 1
     assert task_adds[0].type == TaskType.EXPENSE
     assert task_adds[0].risk_level == "high"
     assert task_adds[0].requires_confirmation is True
     assert task_adds[0].status == TaskStatus.APPROVING
+    assert task_adds[0].approver_id == "director-1"
+
     approval_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], ApprovalModel)]
-    assert len(approval_adds) == 1
-    assert approval_adds[0].approver_id == "admin-1"
-    assert approval_adds[0].status == "pending"
+    assert [(a.step, a.approver_id) for a in approval_adds] == [
+        (1, "director-1"),
+        (2, "manager-1"),
+    ]
+    assert all(a.status == "pending" for a in approval_adds)
+    assert [a.approver_source for a in approval_adds] == [
+        "parent_dept_manager",
+        "self_dept_manager",
+    ]
+
+
+async def test_routing_failure_marks_task_for_manual_assignment() -> None:
+    """路由解析不出审批人时不猜测：任务置 PROCESSING、记录原因并通知行政专员。"""
+    app = create_app()
+    captured: list[Any] = []
+    app.state.orchestrator = _confirm_orchestrator(captured)
+    app.state.state_store = InMemoryConversationStateStore()
+    db = _install_permissive_db(app)
+    transport = ASGITransport(app=app)
+    headers = _make_auth_headers()
+
+    with patch(
+        "app.admin_ai.api.chat.route_approval",
+        AsyncMock(side_effect=RoutingError("no_manager", "部门「技术部」未设置主管")),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/v1/chat/send",
+                json={"message": "我要报销", "conversation_id": "conv-manual"},
+                headers=headers,
+            )
+            await client.post(
+                "/api/v1/chat/confirm/conv-manual",
+                json={"confirmed": True},
+                headers=headers,
+            )
+
+    task_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], TaskModel)]
+    assert len(task_adds) == 1
+    assert task_adds[0].status == TaskStatus.PROCESSING
+    assert task_adds[0].data["_routing"]["status"] == "manual_assign_required"
+    assert task_adds[0].data["_routing"]["reason"] == "no_manager"
+    # 槽位数据保留，人工指派后仍可继续办理
+    assert task_adds[0].data["expense_type"] == "酒店"
+    # 不生成任何审批记录（避免"猜"一个审批人出来）
+    assert not [
+        c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], ApprovalModel)
+    ]
 
 
 async def test_confirm_false_cancels_without_executing() -> None:

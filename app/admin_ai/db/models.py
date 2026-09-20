@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -74,6 +75,38 @@ class ApprovalAction(str, Enum):
     ADD_SIGN = "add_sign"
 
 
+class ApprovalStatus(str, Enum):
+    """审批记录状态。
+
+    `approvals.status` 列为普通字符串（沿用首次迁移），故这里仅作取值约定：
+    pending 待审 / approve 通过 / reject 驳回 / done 已处理（加签场景关闭原记录）
+    / skipped 任一人通过后自动关闭的同步骤其他记录。
+    """
+    PENDING = "pending"
+    APPROVE = "approve"
+    REJECT = "reject"
+    DONE = "done"
+    SKIPPED = "skipped"
+
+
+class ApproverType(str, Enum):
+    """审批人解析方式（设计 §4.2）。"""
+    SELF_DEPT_MANAGER = "self_dept_manager"
+    PARENT_DEPT_MANAGER = "parent_dept_manager"
+    TOP_DEPT_MANAGER = "top_dept_manager"
+    ROLE = "role"
+    USER = "user"
+
+
+class ApprovalMode(str, Enum):
+    """同一审批步骤多人的判定方式（设计 §4.3）。
+
+    ANY_ONE 任一人通过即该步完成（默认，D-2 决策）；ALL_MUST 会签，全部通过才算完成。
+    """
+    ANY_ONE = "any_one"
+    ALL_MUST = "all_must"
+
+
 class UserModel(Base):
     """用户模型。"""
     __tablename__ = "users"
@@ -82,6 +115,9 @@ class UserModel(Base):
     employee_id: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     department: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    department_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("departments.id"), index=True, nullable=True
+    )
     position: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
@@ -201,6 +237,12 @@ class ApprovalModel(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     add_sign_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # 审批人解析来源（ApproverType 取值），供审计追溯「为何是这个人审批」
+    approver_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # 该步骤多人判定方式快照（ApprovalMode 取值）；规则事后修改不影响在途审批
+    mode: Mapped[str] = mapped_column(String(20), default="any_one", nullable=False)
+    # 代理审批：本条记录由 delegated_from 委派给 approver_id 处理
+    delegated_from: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -208,6 +250,91 @@ class ApprovalModel(Base):
 
     def __repr__(self) -> str:
         return f"<ApprovalModel(id={self.id}, task_id={self.task_id}, status={self.status})>"
+
+
+class DepartmentModel(Base):
+    """部门树（设计 §2.1）。
+
+    用物化路径（`path`）而非闭包表：200 人企业部门树 2~3 层，
+    「本部门及所有子部门」查询退化为 `path LIKE '/公司/技术部%'`，无需递归 CTE。
+    """
+    __tablename__ = "departments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    parent_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("departments.id"), index=True, nullable=True
+    )
+    path: Mapped[str] = mapped_column(String(500), index=True, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    manager_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id"), index=True, nullable=True
+    )
+    # 上游（HR）部门 ID，同步幂等键；首期无上游接口时留空
+    external_id: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<DepartmentModel(id={self.id}, name={self.name})>"
+
+
+class ApprovalRuleModel(Base):
+    """审批路由规则（设计 §2.3）。
+
+    金额区间为「含 amount_min、不含 amount_max」，NULL 表示无界；
+    金额为空（如用印）的业务只匹配区间全为 NULL 的规则。
+    """
+    __tablename__ = "approval_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    business_type: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    amount_min: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    amount_max: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    step_order: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    approver_type: Mapped[ApproverType] = mapped_column(
+        SAEnum(ApproverType, values_callable=lambda x: [e.value for e in x]), nullable=False
+    )
+    approver_param: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    approval_mode: Mapped[ApprovalMode] = mapped_column(
+        SAEnum(ApprovalMode, values_callable=lambda x: [e.value for e in x]),
+        default=ApprovalMode.ANY_ONE,
+        nullable=False,
+    )
+    required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    remark: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<ApprovalRuleModel(id={self.id}, business_type={self.business_type})>"
+
+
+class ApprovalDelegationModel(Base):
+    """代理审批委派（设计 §2.4）：主管休假时把审批权临时交给他人。"""
+    __tablename__ = "approval_delegations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    delegator_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    delegate_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    start_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # NULL = 全部业务类型
+    business_types: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<ApprovalDelegationModel(id={self.id}, delegator_id={self.delegator_id})>"
 
 
 class AuditLogModel(Base):

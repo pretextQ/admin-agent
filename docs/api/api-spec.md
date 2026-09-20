@@ -338,6 +338,7 @@
 |------|------|------|
 | `status` | string | 过滤：pending / processing / approving / completed / failed / cancelled |
 | `type` | string | 过滤：leave / expense / travel / meeting_room / vehicle / material / asset / seal / certificate / onboarding |
+| `scope` | string | 数据归属范围（SECURITY §4.3）：`my` 本人（默认）/ `dept` 本部门及子部门（限部门主管）/ `all` 全量（限 admin·finance·hr）。越权取值返回 `40003`，非法取值返回 `40001`；`dept`/`all` 每次访问写审计（`action=task_scope_query`，只记范围不记单据内容） |
 | `page` / `page_size` | int | 分页 |
 
 响应（分页字段统一为 `items/total/page/page_size`）：
@@ -360,6 +361,7 @@
         "total": 10,
         "page": 1,
         "page_size": 20,
+        "scope": "my",
         "pending_count": 3,
         "approving_count": 2
     }
@@ -461,8 +463,17 @@
 | `/admin/tools` | GET | 工具列表与启用状态 |
 | `/admin/tools/{tool_id}/config` | PUT | 更新工具配置 |
 | `/admin/metrics` | GET | LLM 调用次数、Token 成本、平均响应时间、完成率、转人工率 |
+| `/admin/departments` | GET | 部门树（含主管与上游 `external_id`，用于核对组织数据完整性） |
+| `/admin/approval-rules` | GET / POST | 审批路由规则：查询 / 新增或更新（带 `id` 为更新）；校验 `approver_type`、`approval_mode`、金额区间与 `step_order` |
+| `/admin/approval-rules/{rule_id}` | DELETE | 删除规则（在途审批不受影响，步骤模式在生成审批链时已快照） |
+| `/admin/approval-delegations` | GET / POST | 代理审批委派：查询 / 新增（`delegator_id ≠ delegate_id`、`end_at > start_at`） |
+| `/admin/org/sync` | POST | 手动触发组织同步；失败不修改组织数据，返回 `ok=false` 与原因 |
 
 均要求管理员角色，否则返回 `40003`。
+
+> 审批规则与委派的字段语义、路由算法与兜底行为见
+> [组织架构与审批路由设计](../architecture/组织架构与审批路由设计.md)；
+> 首期维护入口为「脚本 + API」（`scripts/manage_approval_rules.py`），管理后台 UI 随评审 I-3 决策另排。
 
 ---
 

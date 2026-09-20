@@ -8,6 +8,21 @@
 ## [Unreleased]
 
 ### 新增
+- **组织架构与审批路由落地（评审 B-2，唯一未完成的阻断项）**：审批人不再取「首个管理员」，改按「业务类型 + 金额 + 申请人部门」路由，使审批链具备公司内部授权效力
+  - `core/approval/router.py`：**纯函数**路由算法——规则匹配（含 min、不含 max；无金额业务只匹配区间为 NULL 的规则）、逐级解析（self/parent/top 部门主管、role、user）、**自审拦截与上溯**、停用/离职上溯、链内去重、委派替换
+  - `core/approval/repository.py`：组织快照装载（含已停用用户，否则无法判断"审批人已停用"）、规则与委派装载、审批链落库、路由失败原因记录
+  - 三张新表（迁移 `002`，Expand 阶段）：`departments`（物化路径树 + 上游 `external_id`）、`approval_rules`（金额区间 × 审批人类型）、`approval_delegations`（代理审批）；`users` 加 `department_id`（兼容期与旧 `department` 双写）；`approvals` 加 `approver_source` / `mode` / `delegated_from`
+  - 迁移回填：按旧 `users.department` 生成扁平部门（旧模型无层级信息）并导入默认规则（APR-001/002 + 用印默认）；**不回填主管**——组织数据不完整时走人工指派，不猜审批人
+  - 审批流转支持**任一人通过**（默认，同步骤其他待办自动关闭）与**会签**（全部通过才算该步完成）；驳回时其余待审记录一并关闭，已出结论的记录不改写
+  - 路由失败兜底：任务置 `processing` + 记录原因（`task.data._routing`）+ 通知行政专员，绝不猜测审批人
+  - 新增 65 个用例（算法 24 + 流转 4 + 归属 8 + 同步 12 + 管理端 9 + 聊天 2 + 真实 PG 集成 6）；E2E 冒烟改为**跨用户真实路由**（员工 emp999 提交 → 主管 admin001 审批）
+- **数据归属与查询范围（SECURITY §4.3 / 设计 §5）**：`/tasks/my?scope=my|dept|all`——本人 / 本部门及子部门（部门主管）/ 全量（admin·finance·hr）；归属条件下推到 SQL（不做"先查全量再过滤"），`dept`/`all` 范围每次访问写审计（`action=task_scope_query`，只记范围不记单据内容）
+- **组织架构上游同步（HR 为权威源，决策 D-3）**：`core/approval/sync.py` + `scripts/sync_org.py`
+  - provider：`http`（HR 组织接口，约定见设计 §3.3）/ `csv`（HR 导出文件，格式样例 `scripts/sample_org/*.csv`）/ `disabled`
+  - 幂等 upsert（上游 `external_id`）、全量对账软删（上游已删除的部门置 `is_active=false`，无 `external_id` 的本地部门不动）、员工调动与离职同步（本地查无此人不自动建号）
+  - **失败降级**：同步失败沿用上次快照、绝不清空组织数据，连续失败达 3 次升级告警；失败计数走 Redis 且 Redis 不可用时不阻断
+- **管理端与脚本维护入口（决策 D-5：首期脚本 + API，不做 UI）**：`/admin/departments`、`/admin/approval-rules`（增删查，含取值校验）、`/admin/approval-delegations`（增查）、`/admin/org/sync`；`scripts/manage_approval_rules.py`（list/add/enable/disable/delete/export/import）
+- **开发环境组织种子** `scripts/seed_org_demo.py`：公司(gm001) → 技术部(admin001)，成员 admin001/emp999；`external_id` 与样例 CSV 对齐，同步演练是更新而非重复建部门；已接入 `setup_dev_env.sh`
 - **LLM 数据脱敏与合规落地（评审 B-1）**：外部大模型调用改走统一出入口，实现「拦截 → 脱敏 → 调用 → 回填 → 审计」全链路
   - `core/llm_redaction.py`：按类别脱敏（手机号/邮箱/工号/姓名/金额可配）、L4 命中即中止（身份证/银行卡绝不外送）、占位符**会话内一致映射**（同一人始终同一占位符，避免多轮语义错乱）、回复占位符回填（未登记的保留不猜测）
   - `core/llm_gateway.py`：统一出入口 `LLMGateway.chat()`，含 fail-closed（脱敏异常时拒绝调用而非直发原文）、涉密业务排除（证明开具/用印默认不走外部 LLM）、调用审计（只记脱敏类别与词元用量，不记原文）
@@ -33,6 +48,10 @@
 - **会话状态存储** `ConversationStateStore`（内存 / Redis 双实现）— 按 conversation_id 保存意图、业务类型、槽位、待确认状态
 
 ### 修复
+- **修复一直挂着的集成用例**：`test_health.py` 的 `/tasks/my` 集成用例因全局审计打桩把会话工厂替换成 MagicMock，被 `-m integration` 选中时必然报 `object MagicMock can't be used in 'await' expression`（默认跳过所以从未暴露）；改为自建引擎并覆盖 `get_db_session` 依赖后，集成套件 7/7
+- **审批人硬编码**：`api/chat.py` 原取「首个 admin」作为审批人（与场景文档 APR-001/002 相差一整个审批层级体系），现改为按规则路由
+- **审批驳回留下悬挂待办**：驳回后其余 `pending` 记录未关闭，任务已失败却仍出现在他人的待审批列表
+- **加签记录缺少步骤模式**：加签生成的新审批记录补 `mode` 与 `approver_source`，与原步骤保持一致
 - **`/chat/transfer` 补齐会话校验**：原端点无任何校验、不落库、对任意会话都谎报"已转接成功"——任何登录用户可对他人会话发起转人工；现校验会话存在（40004）与属主（40003），并真实落库会话状态与消息
 - **修复任务写入真实 PostgreSQL 必失败的问题**：迁移创建的原生枚举类型为小写 value（如 `pending`），而 `SAEnum` 绑定的是大写 name（`PENDING`），所有任务/消息/会话的查询与写入均报枚举无效——模型列补 `values_callable` 对齐（此前从未在真实 PG 上验证过，E2E 冒烟发现）
 - **修复对话写入的读写竞态**：`get_db_session` 的 teardown 提交发生在响应发送之后，紧随其后的查询可能读到提交前快照（E2E 中表现为任务列表计数为 0）；对话接口改为端点内显式提交
@@ -55,6 +74,9 @@
 - **前端 OAuth 回调**：先落 token 再调用 `/auth/me`，修复回调必然 401 跳回登录页的问题
 
 ### 变更
+- **E2E 冒烟改为跨用户路由验证**：报销由普通员工 `emp999` 提交、部门主管 `admin001` 审批，并断言 ≤2000 元为单级审批链——原脚本用 admin001 既申请又审批，恰好掩盖了「首个管理员」的缺陷（即设计 T-3 自审场景）
+- `/tasks/my` 返回新增 `scope` 字段；`/admin/*` 新增 5 个端点（全部走 `get_admin_user`）
+- 测试基线：**pytest 192 passed, 7 deselected**（集成用例需显式 `-m integration`，真实 PG 上 7/7 通过）；E2E 冒烟 9/9
 - **接入 DeepSeek 作为 LLM**（`OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-flash`）：意图识别与槽位抽取改走真实 LLM；实测发不含规则关键词的消息可识别为 `leave_request` 并追问槽位。`pytest` 95 passed、`e2e_smoke` 9/9 无回归。该 Key 可用模型为 `deepseek-flash` 与 `deepseek-v4-pro`（`deepseek-chat` 等旧名会被路由到 flash），5 条典型消息两模型均 5/5 命中，故取更快的 flash
 - **RAG 方案重排**：DeepSeek 不提供 embedding API（`POST /embeddings` 返回 404），向量化不能复用它——嵌入改为二选一：另配智谱 `embedding-3` 等 OpenAI 兼容嵌入服务（零本机资产），或本地 `BAAI/bge-small-zh-v1.5`（95MB，离线可用）。待抽 `Embedder` 接口后落实
 - 确认卡片 `card_data` 对齐 API 规格第 10 节：`{type, title, data, actions, warning}`

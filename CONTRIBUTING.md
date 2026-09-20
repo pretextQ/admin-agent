@@ -140,7 +140,8 @@ pytest -m e2e
 PYTHONPATH=. python scripts/e2e_smoke.py
 ```
 
-> 提交前请确保 `pytest` 全绿（当前基线：133 passed, 1 deselected）。
+> 提交前请确保 `pytest` 全绿（当前基线：192 passed, 7 deselected；
+> 另有 7 个真实 PG 集成用例，用 `pytest -m integration -q` 显式运行）。
 > 涉及主链路（对话/编排/工具/审批）的改动，建议再跑一次 `scripts/e2e_smoke.py`。
 
 ### 5. 提交代码

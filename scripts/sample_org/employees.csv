@@ -1,0 +1,4 @@
+employee_id,name,department_external_id,is_active
+gm001,总经理,D100,true
+admin001,管理员,D200,true
+emp999,开发用户-emp999,D200,true

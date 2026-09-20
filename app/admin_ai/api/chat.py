@@ -20,10 +20,17 @@ from app.admin_ai.core.agent.state_store import (
     ConversationStateStore,
     get_default_state_store,
 )
+from app.admin_ai.core.approval.repository import (
+    build_approval_rows,
+    clear_routing_note,
+    first_step_approver,
+    route_approval,
+    set_routing_note,
+)
+from app.admin_ai.core.approval.router import RoutingError
 from app.admin_ai.core.auth.deps import get_current_user
 from app.admin_ai.db.database import get_db_session
 from app.admin_ai.db.models import (
-    ApprovalModel,
     ConversationModel,
     ConversationStatus,
     MessageModel,
@@ -34,7 +41,7 @@ from app.admin_ai.db.models import (
     UserModel,
     utc_now,
 )
-from app.admin_ai.services.notification_service import NotificationService
+from app.admin_ai.services.notification_service import NotificationService, notify_admins
 
 logger = structlog.get_logger(__name__)
 
@@ -88,6 +95,59 @@ def _build_conversation_state(context: AgentContext, result: dict, user_id: str)
     )
 
 
+async def _notify_manual_assignment(db: AsyncSession, task: TaskModel) -> None:
+    """通知行政专员有任务待人工指派审批人；通知失败不阻断业务。"""
+    await notify_admins(
+        db,
+        title="待人工指派审批人",
+        content=f"任务「{task.title}」未能按规则解析出审批人，请人工指派。",
+    )
+
+
+async def _create_approval_chain(
+    db: AsyncSession,
+    task: TaskModel,
+    *,
+    business_type: str,
+    slots: dict[str, Any],
+    applicant_id: str,
+) -> bool:
+    """按审批规则路由审批链（设计 §4），返回是否成功生成。
+
+    解析不出审批人时**不猜测**：任务置 `processing` 并标记「待人工指派」，
+    同时通知行政专员（设计 §4.4）——错误路由会让审批失去内部授权效力。
+    """
+    try:
+        outcome = await route_approval(
+            db, business_type=business_type, applicant_id=applicant_id, slots=slots
+        )
+    except RoutingError as exc:
+        task.status = TaskStatus.PROCESSING
+        set_routing_note(task, reason=exc.reason, message=exc.message)
+        logger.warning(
+            "审批链无法解析，转人工指派",
+            task_id=task.id,
+            business_type=business_type,
+            reason=exc.reason,
+        )
+        await _notify_manual_assignment(db, task)
+        return False
+
+    clear_routing_note(task)
+    task.status = TaskStatus.APPROVING
+    task.approver_id = first_step_approver(outcome)
+    for row in build_approval_rows(task.id, outcome):
+        db.add(row)
+    logger.info(
+        "审批链已生成",
+        task_id=task.id,
+        business_type=business_type,
+        steps=len({step.step for step in outcome.steps}),
+        approvers=len(outcome.steps),
+    )
+    return True
+
+
 async def _save_chat_turn(
     db: AsyncSession,
     conversation_id: str,
@@ -134,7 +194,7 @@ async def _save_chat_turn(
     ))
 
     # 工具执行成功时创建任务记录，供任务列表/详情/时间线展示。
-    # 低风险业务自动完成；高风险业务转审批（当前审批人取首个管理员）。
+    # 低风险业务自动完成；高风险业务按规则路由审批链（无法解析则转人工指派）。
     business_type = result.get("task_type")
     if business_type:
         try:
@@ -156,27 +216,14 @@ async def _save_chat_turn(
             db.add(task)
 
             if is_high_risk:
-                admin = (
-                    await db.execute(
-                        select(UserModel)
-                        .where(
-                            UserModel.role == "admin",
-                            UserModel.is_active == True,  # noqa: E712
-                            UserModel.is_deleted == False,  # noqa: E712
-                        )
-                        .order_by(UserModel.created_at)
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-                if admin:
-                    await db.flush()
-                    task.status = TaskStatus.APPROVING
-                    db.add(ApprovalModel(
-                        task_id=task.id, approver_id=admin.id, step=1, status="pending"
-                    ))
-                else:
-                    # 无可用审批人时保持处理中，避免任务静默完成
-                    task.status = TaskStatus.PROCESSING
+                await db.flush()  # 先取 task.id，审批记录外键依赖它
+                await _create_approval_chain(
+                    db,
+                    task,
+                    business_type=business_type,
+                    slots=slots,
+                    applicant_id=user_id,
+                )
             else:
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = utc_now()

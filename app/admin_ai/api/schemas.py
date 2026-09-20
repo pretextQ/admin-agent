@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -73,3 +74,33 @@ class KnowledgeSearchRequest(BaseModel):
     query: str
     category: Optional[str] = None
     top_k: int = 5
+
+
+class ApprovalRuleRequest(BaseModel):
+    """审批规则新增/更新（设计 §2.3）。"""
+    id: Optional[str] = None
+    business_type: str
+    amount_min: Optional[float] = None
+    amount_max: Optional[float] = None
+    step_order: int = 1
+    approver_type: str
+    approver_param: Optional[str] = None
+    approval_mode: str = "any_one"
+    required: bool = True
+    enabled: bool = True
+    remark: Optional[str] = None
+
+
+class ApprovalDelegationRequest(BaseModel):
+    """代理审批委派新增（设计 §2.4）。"""
+    delegator_id: str
+    delegate_id: str
+    start_at: datetime
+    end_at: datetime
+    business_types: Optional[list[str]] = None
+
+
+class OrgSyncRequest(BaseModel):
+    """手动触发组织同步。"""
+    provider: Optional[str] = None
+    csv_dir: Optional[str] = None

@@ -305,17 +305,29 @@ pnpm -C frontend build
 | 新增 | 环境不可迁移：本机资产（PG/Redis/.venv）不入库，换机器需重踩全部坑 | `scripts/setup_dev_env.sh` 一键重建（幂等）+ `scripts/db_backup.sh` 数据备份恢复（含恢复前快照）；修掉 psql 的 MSYS 路径与 UTF8 编码两个真实 bug | b245cb0 |
 | 新增 | `.sh` 在 `core.autocrlf=true` 下检出为 CRLF，换机器后脚本无法执行 | 新增 `.gitattributes` 锁定 `*.sh text eol=lf`，并 clone 实测验证 | 063d0a9 |
 
+### Batch 13 关闭项（2026-09-20，评审 B-2）
+
+| 项 | 问题 | 处理方式 | 提交 |
+|----|------|----------|------|
+| 设计评审 C-5 / B-2 | 审批人硬编码为「首个管理员」，与场景文档 APR-001/002 的金额分级相差一整个层级体系 | 新增 `departments`/`approval_rules`/`approval_delegations` 三表（迁移 `002`）与纯函数路由算法（自审拦截与上溯、停用上溯、链内去重、委派替换）；`chat.py` 确认路径改为按规则路由，解析不出则转人工指派并记录原因（`task.data._routing`）；审批流转支持任一人/会签 | 本次提交 |
+| 设计评审 §5 / SECURITY §4.3 | 「每次调用按角色 + 数据归属 + 金额/范围判定权限」「查询强制注入本部门归属」未落地 | `/tasks/my?scope=my\|dept\|all`：归属条件下推 SQL，`dept`/`all` 每次访问写审计（`action=task_scope_query`） | 本次提交 |
+| 新增 | 审批驳回后其余 `pending` 记录未关闭，任务已失败仍出现在他人待审批列表 | 驳回时关闭其余待审记录为 `skipped`；已出结论的记录不改写（保留审计追溯） | 本次提交 |
+| 新增 | 组织架构无来源、无降级：部门/汇报线缺失时审批人无从谈起 | HR 组织同步（http 接口 + CSV 降级）+ 失败沿用上次快照、连续失败升级告警；开发环境 `seed_org_demo.py` | 本次提交 |
+| 新增 | E2E 冒烟用同一账号既申请又审批，掩盖了「自审」缺陷 | E2E 改为跨用户：员工 emp999 提交 → 部门主管 admin001 审批，并断言 ≤2000 元为单级链 | 本次提交 |
+
 ### 仍然开放
 
 **P1 级**：R-10（OAuth state 校验失败时静默跳过，开发环境可接受但生产需收紧）、
-R-11（审批状态取值前后端不一致）、R-13（规则引擎类型健壮性）、R-16（`status_query` 仍为占位，意图已识别无消费方）、
+R-11（审批状态取值前后端不一致；**审批链本身已按 B-2 落地**，状态取值口径待前端一并统一）、
+R-13（规则引擎类型健壮性）、R-16（`status_query` 仍为占位，意图已识别无消费方）、
 R-19（Prometheus 指标未接入）。
 
-**P2 级**：R-21（services 层仍为死代码，`notification_service` 已被转人工调用）、R-22（前端模板残留样式）、
-R-23（Docker/nginx 部署文件缺失）、R-24（`langchain*`/`celery` 声明未使用）、R-28（requirements 生成方式说明）、
-R-30（mypy 严格模式未验证）、R-31（覆盖率未达声明门槛）。
+**P2 级**：R-21（services 层仍为死代码，`notification_service` 已被转人工与审批路由失败通知调用）、
+R-22（前端模板残留样式）、R-23（Docker/nginx 部署文件缺失）、R-24（`langchain*`/`celery` 声明未使用）、
+R-28（requirements 生成方式说明）、R-30（mypy 严格模式未验证）、R-31（覆盖率未达声明门槛）。
 
-**新开放**：ruff lint/format 债 336 项（含 FastAPI `B008` 误报需配置豁免，做法见交接文档 P2-14）；
-RAG 嵌入模型未定（DeepSeek 无 embedding API）；编排器自动转人工路径未通知人工客服。
+**新开放**：ruff lint/format 债（2026-09-20 实测 360 项、64 个文件待重排，含 FastAPI `B008` 误报需配置豁免，
+做法见交接文档 P2-14）；RAG 嵌入模型未定（DeepSeek 无 embedding API）；编排器自动转人工路径未通知人工客服；
+审批路由的 T-10 双读校验期未安排、`users.department` 旧列 Contract 阶段另排（见设计补丁 §12）。
 
 **开放决策**：D-01（`/chat/confirm` 规范用 `task_id`、实现用 `conversation_id`）、D-02（LLM 供应商/超时/成本口径）。

@@ -1,0 +1,3 @@
+external_id,name,parent_external_id,manager_employee_id
+D100,公司,,gm001
+D200,技术部,D100,admin001

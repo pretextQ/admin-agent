@@ -153,8 +153,9 @@ else
             | grep -q '[1-9]' && ok "库表已存在" || bad "库表缺失（执行：.venv/Scripts/python.exe -m alembic upgrade head）"
     elif ( cd "$PROJECT_ROOT" \
             && PYTHONPATH=. .venv/Scripts/python.exe -m alembic upgrade head >/dev/null 2>&1 \
-            && PYTHONPATH=. .venv/Scripts/python.exe scripts/seed_admin.py >/dev/null 2>&1 ) ; then
-        ok "迁移与种子数据就绪（admin001）"
+            && PYTHONPATH=. .venv/Scripts/python.exe scripts/seed_admin.py >/dev/null 2>&1 \
+            && PYTHONPATH=. .venv/Scripts/python.exe scripts/seed_org_demo.py >/dev/null 2>&1 ) ; then
+        ok "迁移与种子数据就绪（admin001 + 演示组织：公司/技术部）"
     else
         bad "迁移或种子失败——手动执行排查：.venv/Scripts/python.exe -m alembic upgrade head"
     fi

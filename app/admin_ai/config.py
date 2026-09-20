@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     # 本地嵌入式持久化目录：Chroma 服务不可达时使用，无需独立部署
     CHROMA_PERSIST_PATH: str = "data/chroma"
 
+    # ============ 组织架构与审批路由（设计见 docs/architecture/组织架构与审批路由设计.md）============
+    # 组织数据来源：csv（HR 导出文件导入，默认）/ http（HR 组织接口）/ disabled
+    ORG_SYNC_PROVIDER: str = "csv"
+    ORG_SYNC_CSV_DIR: str = "data/org"
+    HR_ORG_BASE_URL: str = ""
+    HR_ORG_TOKEN: str = ""
+    ORG_SYNC_TIMEOUT_SECONDS: float = 10.0
+
     OA_SERVICE_URL: str = "http://localhost:8001"
     FINANCE_SERVICE_URL: str = "http://localhost:8002"
     MATERIAL_SERVICE_URL: str = "http://localhost:8003"
