@@ -16,7 +16,7 @@
 - **Batch 2（安全与持久化）、Batch 3（能力补齐）、Batch 4（审批闭环与端到端验证）已完成并提交**（328f730 / f824e75 / 1933b81），P0 全部关闭，P1 大部分关闭。
 - **Batch 5~8 已完成并提交**（acef1be / b245cb0 / 063d0a9 / ae6aa89 / 802e3a8 / ce5ba7a）：
   转人工真实落地、环境一键重建与数据备份脚本、**LLM 接入 DeepSeek（意图/槽位/回复生成）**；
-  测试基线升至 99 passed，E2E 冒烟 9/9 在真实 LLM 下通过。整改明细见文末附录。
+  测试基线升至 133 passed，E2E 冒烟 9/9 在真实 LLM 下通过。整改明细见文末附录。
 
 ### 问题分级统计（评审基线与当前状态）
 
@@ -33,7 +33,7 @@
 
 | 项 | 命令 | 初始结果 | 当前结果（2026-09-20） |
 |----|------|----------|----------|
-| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **99 passed, 1 deselected** |
+| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **133 passed, 1 deselected** |
 | 前端类型检查 | `pnpm -C frontend exec tsc -b` | 通过 | 通过 |
 | 前端 lint | `pnpm -C frontend lint` | 0 error / 1 warning | 0 error / 1 warning |
 | 前端构建 | `pnpm -C frontend build` | 通过 | 通过 |
