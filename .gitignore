@@ -34,6 +34,9 @@ data/
 chroma_data/
 volumes/
 
+# 数据库备份（scripts/db_backup.sh 产物，含业务数据，不入库）
+backups/
+
 # 日志
 logs/
 *.log

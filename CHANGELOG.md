@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### 新增
+- **环境一键重建脚本** `scripts/setup_dev_env.sh`：换机器后 clone 仓库执行即可恢复开发环境——检查/安装 uv、创建 venv 并装依赖、生成 `.env`、检测并拉起 PostgreSQL/Redis、建库迁移种子、自动跑 pytest 核验；幂等设计，`--check` 只体检不安装
+- **数据备份/恢复脚本** `scripts/db_backup.sh`：`pg_dump` 导出 admin_ai 库到 `backups/*.sql`（已 gitignore）并可恢复；恢复前自动生成当前数据快照以便回滚；内置处理 Windows 下 psql 的两个坑（MSYS 路径需 `cygpath` 转换、中文数据需 `PGCLIENTENCODING=UTF8`）
 - **转人工落地**：`/chat/transfer` 由固定话术改为真实处理——校验会话存在性与属主后置 `conversations.status=transferred`、写入历史消息（meta 记录 `transfer_to_human` 与 `reason`）、清除会话待确认状态、调用 `NotificationService` 通知人工客服
 - **端到端冒烟脚本** `scripts/e2e_smoke.py`：登录 → 聊天 → 工具（开发桩）→ 任务 → 审批 全链路 9 步验证
 - **审批操作界面**：任务详情页支持同意/驳回（`can_approve` 标记）与属主取消（`is_owner` 标记）；详情对当前审批人开放
