@@ -362,6 +362,9 @@ alembic downgrade -1
 | `OPENAI_API_KEY` | LLM API Key | - |
 | `OPENAI_BASE_URL` | LLM API 地址 | `https://api.openai.com/v1` |
 | `LLM_MODEL` | 模型名称 | `gpt-4o-mini` |
+| `LLM_REDACTION_ENABLED` | LLM 脱敏与 L4 拦截开关（**生产禁止关闭**，会 fail-fast） | `true` |
+| `LLM_EXCLUDED_BUSINESS_TYPES` | 不走外部 LLM 的涉密业务类型 | `["certificate","seal"]` |
+| `REDACT_AMOUNT` | 是否连金额一并占位化 | `false` |
 | `CHROMA_HOST` / `CHROMA_PORT` | 向量库地址 | `localhost` / `8005` |
 | `SECRET_KEY` | JWT 密钥（生产必须修改） | - |
 | `FEISHU_APP_ID` | 飞书应用 App ID | - |
@@ -377,6 +380,11 @@ alembic downgrade -1
 > 未配置 Key 时服务照常运行，自动降级为规则回退 + 模板回复。
 > ⚠️ 注意：DeepSeek 不提供 embedding API，RAG 向量化需另配嵌入服务或本地模型。
 > ⚠️ Key 只放在本地 `.env`（已被 `.gitignore` 忽略），**不要提交**。
+>
+> **数据合规（默认开启，勿在生产关闭）**：所有对外部大模型的调用都经统一网关脱敏——
+> 手机号/邮箱/工号/姓名替换为占位符后送出并自动回填，身份证/银行卡命中即中止调用，
+> 证明开具与用印等涉密业务不走外部 LLM，每次调用留审计（只记数据类别，不记原文）。
+> 详见 [LLM 数据脱敏与合规设计](docs/architecture/LLM数据脱敏与合规设计.md)。
 
 ---
 
