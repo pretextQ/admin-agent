@@ -70,6 +70,7 @@ def _rule(
     approval_mode: str = ApprovalMode.ANY_ONE.value,
     required: bool = True,
     enabled: bool = True,
+    condition: object = None,
 ) -> RuleInfo:
     return RuleInfo(
         id=rule_id,
@@ -82,6 +83,7 @@ def _rule(
         approval_mode=approval_mode,
         required=required,
         enabled=enabled,
+        condition=condition,
     )
 
 
@@ -96,8 +98,16 @@ EXPENSE_RULES = [
 ]
 
 
-def _org(*, dept_manager: str | None = "mgr", tech_manager_active: bool = True) -> OrgSnapshot:
-    """公司 → 技术部 → 后端组；公司主管 ceo，技术部主管 mgr。"""
+def _org(
+    *,
+    dept_manager: str | None = "mgr",
+    tech_manager_active: bool = True,
+    extra_roles: dict[str, list[str]] | None = None,
+) -> OrgSnapshot:
+    """公司 → 技术部 → 后端组；公司主管 ceo，技术部主管 mgr。
+
+    `extra_roles` 用于追加「角色类审批人」场景，如 {"legal": ["lawyer"], "hr": ["hr01"]}。
+    """
     departments = [
         _dept("c", "公司", level=1, manager_id="ceo", path="/公司"),
         _dept("t", "技术部", parent_id="c", level=2, manager_id=dept_manager, path="/公司/技术部"),
@@ -109,6 +119,8 @@ def _org(*, dept_manager: str | None = "mgr", tech_manager_active: bool = True) 
         _user("emp", department_id="t"),
         _user("intern", department_id="b"),
     ]
+    for role, members in (extra_roles or {}).items():
+        users.extend(_user(user_id, department_id="c", role=role) for user_id in members)
     return OrgSnapshot(
         departments={d.id: d for d in departments},
         users={u.id: u for u in users},
@@ -258,10 +270,14 @@ def test_inactive_manager_ascends_to_parent() -> None:
 # ---------------------------------------------------------------- T-7
 
 def test_t7_business_type_without_rules_fails() -> None:
-    """T-7 未配置审批规则的新业务类型 → RoutingError（调用方转人工指派）。"""
+    """T-7 该业务一条规则都没配 → RoutingError（配置缺失，转人工指派）。
+
+    注意与「配了规则但本次不匹配」的区别：后者返回 requires_approval=False（无需审批），
+    见 test_approval_rules_matching.py。
+    """
     with pytest.raises(RoutingError) as exc:
         resolve_chain(
-            rules=EXPENSE_RULES,
+            rules=[],
             snapshot=_org(),
             applicant_id="emp",
             business_type="seal",
@@ -295,7 +311,9 @@ def test_required_step_unresolvable_fails() -> None:
     """required=True 的步骤解析失败 → RoutingError。"""
     rules = [
         _rule("r1", amount_min=Decimal("0"), amount_max=Decimal("2000")),
-        _rule("r2", approver_type=ApproverType.ROLE.value, approver_param="finance"),
+        # 带区间（非兜底）：与 r1 同一步骤且必需，解析失败应整链失败
+        _rule("r2", approver_type=ApproverType.ROLE.value, approver_param="finance",
+              amount_min=Decimal("0")),
     ]
     with pytest.raises(RoutingError) as exc:
         resolve_chain(

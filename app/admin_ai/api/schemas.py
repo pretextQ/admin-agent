@@ -88,6 +88,8 @@ class ApprovalRuleRequest(BaseModel):
     approval_mode: str = "any_one"
     required: bool = True
     enabled: bool = True
+    # 按槽位分支的条件，形如 [{"slot": "days", "op": "gt", "value": 2}]；留空表示无条件
+    condition: Optional[list[dict[str, Any]]] = None
     remark: Optional[str] = None
 
 

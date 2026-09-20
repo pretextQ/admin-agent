@@ -306,6 +306,9 @@ class ApprovalRuleModel(Base):
     )
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 按槽位分支的条件，形如 [{"slot": "days", "op": "gt", "value": 2}]；空表示无条件。
+    # 金额区间与条件都为空即「兜底规则」：同一步骤内让位于条件/区间规则（见 router.match_rules）
+    condition: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
     remark: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

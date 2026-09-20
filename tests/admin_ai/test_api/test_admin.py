@@ -183,7 +183,7 @@ async def test_list_approval_rules_returns_rows() -> None:
     rule.enabled = True
     rule.remark = "APR-001"
 
-    db = _install_db(app, execute_rows=[rule])
+    _install_db(app, execute_rows=[rule])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/v1/admin/approval-rules", headers=_headers("admin"))
@@ -198,7 +198,7 @@ async def test_list_approval_rules_returns_rows() -> None:
 async def test_create_approval_rule_validates_approver_type() -> None:
     """非法 approver_type → 40001（配置错误会导致审批链解析失败）。"""
     app = create_app()
-    db = _install_db(app)
+    _install_db(app)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -213,7 +213,7 @@ async def test_create_approval_rule_validates_approver_type() -> None:
 async def test_create_approval_rule_requires_param_for_role() -> None:
     """role 类型必须给 approver_param。"""
     app = create_app()
-    db = _install_db(app)
+    _install_db(app)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -228,7 +228,7 @@ async def test_create_approval_rule_requires_param_for_role() -> None:
 async def test_create_approval_rule_validates_amount_range() -> None:
     """amount_min 必须小于 amount_max。"""
     app = create_app()
-    db = _install_db(app)
+    _install_db(app)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -290,7 +290,7 @@ async def test_delete_approval_rule_missing_returns_404() -> None:
 async def test_create_delegation_rejects_self_delegation() -> None:
     """不能把审批权委派给自己。"""
     app = create_app()
-    db = _install_db(app)
+    _install_db(app)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -360,3 +360,49 @@ async def test_list_departments_returns_manager_info() -> None:
     item = response.json()["data"]["items"][0]
     assert item["manager"]["employee_id"] == "admin001"
     assert item["external_id"] == "D200"
+
+
+async def test_create_approval_rule_with_condition() -> None:
+    """按槽位分支的规则（如用印的合同章 → 法务）可落库并回显条件。"""
+    app = create_app()
+    db = _install_db(app)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/admin/approval-rules",
+            json={
+                "business_type": "seal",
+                "approver_type": "role",
+                "approver_param": "legal",
+                "condition": [{"slot": "seal_type", "op": "eq", "value": "合同章"}],
+            },
+            headers=_headers("admin"),
+        )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["condition"] == [{"slot": "seal_type", "op": "eq", "value": "合同章"}]
+    added = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], ApprovalRuleModel)]
+    assert added[0].condition == [{"slot": "seal_type", "op": "eq", "value": "合同章"}]
+
+
+async def test_create_approval_rule_rejects_bad_condition() -> None:
+    """非法条件（算子不支持）→ 40001，且不落库。"""
+    app = create_app()
+    db = _install_db(app)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/admin/approval-rules",
+            json={
+                "business_type": "seal",
+                "approver_type": "role",
+                "approver_param": "legal",
+                "condition": [{"slot": "seal_type", "op": "contains", "value": "合同章"}],
+            },
+            headers=_headers("admin"),
+        )
+    assert response.status_code == 400
+    assert response.json()["code"] == 40001
+    assert not [
+        c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], ApprovalRuleModel)
+    ]

@@ -14,7 +14,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
+from app.admin_ai.core.approval.conditions import evaluate_conditions
 from app.admin_ai.db.models import ApprovalMode, ApproverType, utc_now
 
 
@@ -62,7 +64,11 @@ class UserInfo:
 
 @dataclass(frozen=True)
 class RuleInfo:
-    """审批规则快照。"""
+    """审批规则快照。
+
+    `condition`：按槽位分支的条件（见 `conditions.py`），形如
+    `[{"slot": "days", "op": "gt", "value": 2}]`；为空表示无条件。
+    """
     id: str
     business_type: str
     amount_min: Decimal | None
@@ -73,6 +79,15 @@ class RuleInfo:
     approval_mode: str = ApprovalMode.ANY_ONE.value
     required: bool = True
     enabled: bool = True
+    condition: Any = None
+
+    @property
+    def is_catch_all(self) -> bool:
+        """兜底规则：金额区间与条件都为空（任何情况都适用）。
+
+        同一步骤内若既有条件/区间规则又有兜底规则，只取前者——否则分支会被兜底稀释成多人并行。
+        """
+        return self.amount_min is None and self.amount_max is None and not self.condition
 
 
 @dataclass(frozen=True)
@@ -119,35 +134,57 @@ class ApprovalStep:
 
 @dataclass(frozen=True)
 class RoutingOutcome:
-    """路由结果：有序审批链。"""
+    """路由结果。
+
+    `requires_approval=False`（steps 为空）表示**该请求无需审批**：该业务配置了规则，
+    但本次请求不落在任何规则的金额区间/条件下（例如单价 ≤100 元的普通物资）。
+    注意与抛 `RoutingError("no_rule")` 的区别——后者是**该业务一条规则都没配**，属配置缺失。
+    """
     steps: tuple[ApprovalStep, ...]
+    requires_approval: bool = True
 
 
 def match_rules(
-    rules: Iterable[RuleInfo], business_type: str, amount: Decimal | None
+    rules: Iterable[RuleInfo],
+    business_type: str,
+    amount: Decimal | None,
+    context: Mapping[str, Any] | None = None,
 ) -> list[RuleInfo]:
-    """按业务类型与金额匹配生效规则，按 step_order 升序返回。
+    """按业务类型、金额区间与条件匹配生效规则，按 step_order 升序返回。
 
-    金额区间为「含 amount_min、不含 amount_max」；`amount` 为空时只匹配区间为 NULL 的规则
-    （如用印无金额）。停用（enabled=False）规则不参与匹配。
+    - 金额区间为「含 amount_min、不含 amount_max」；`amount` 为空时只匹配区间为 NULL 的规则
+      （如用印无金额）；
+    - 条件按槽位求值，槽位缺失即视为不成立（见 `conditions.evaluate_conditions`）；
+    - **兜底规则（区间与条件都为空）在同类规则也匹配时不参与**，避免把分支稀释成多人并行。
     """
     if amount is not None and not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
+    rule_context: Mapping[str, Any] = context or {}
 
     matched: list[RuleInfo] = []
     for rule in rules:
         if not rule.enabled or rule.business_type != business_type:
             continue
-        if amount is None:
-            if rule.amount_min is None and rule.amount_max is None:
-                matched.append(rule)
+        if not _amount_matches(rule, amount):
             continue
-        if rule.amount_min is not None and amount < rule.amount_min:
-            continue
-        if rule.amount_max is not None and amount >= rule.amount_max:
+        if rule.condition and not evaluate_conditions(rule.condition, rule_context):
             continue
         matched.append(rule)
-    return sorted(matched, key=lambda r: r.step_order)
+
+    specific = [rule for rule in matched if not rule.is_catch_all]
+    effective = specific or matched
+    return sorted(effective, key=lambda r: r.step_order)
+
+
+def _amount_matches(rule: RuleInfo, amount: Decimal | None) -> bool:
+    """金额区间匹配：有金额时按「含 min、不含 max」，无金额时只认区间为 NULL 的规则。"""
+    if amount is None:
+        return rule.amount_min is None and rule.amount_max is None
+    if rule.amount_min is not None and amount < rule.amount_min:
+        return False
+    if rule.amount_max is not None and amount >= rule.amount_max:
+        return False
+    return True
 
 
 def resolve_chain(
@@ -157,20 +194,31 @@ def resolve_chain(
     applicant_id: str,
     business_type: str,
     amount: Decimal | None = None,
+    context: Mapping[str, Any] | None = None,
     delegations: Sequence[DelegationInfo] = (),
     occurred_at: datetime | None = None,
 ) -> RoutingOutcome:
     """计算审批链（设计 §4.2）。
 
-    逐级解析审批人 → 自审拦截与上溯 → 停用上溯 → 链内去重 → 委派替换。
+    `rules` 应为**该业务类型的候选规则集**（调用方按 business_type 预筛）。据此区分两种「无结果」：
+
+    - 候选集为空 → `RoutingError("no_rule")`：该业务没有配置审批规则，属配置缺失，转人工；
+    - 候选集非空但本次未匹配 → `RoutingOutcome(requires_approval=False)`：本次请求无需审批。
+
+    匹配到规则后逐级解析审批人 → 自审拦截与上溯 → 停用上溯 → 链内去重 → 委派替换；
     任一步无法解析出审批人则抛 `RoutingError`，调用方应转人工指派而非放行。
     """
-    matched = match_rules(rules, business_type, amount)
-    if not matched:
+    candidates = list(rules)
+    if not candidates:
         raise RoutingError(
             "no_rule",
-            f"业务类型 {business_type}（金额 {amount}）未匹配到审批规则，需人工指派",
+            f"业务类型 {business_type} 未配置任何审批规则，需人工指派",
         )
+
+    matched = match_rules(candidates, business_type, amount, context)
+    if not matched:
+        # 规则配了但本次不落在任何区间/条件内：该请求无需审批（如单价 ≤100 元的普通物资）
+        return RoutingOutcome(steps=(), requires_approval=False)
 
     applicant = snapshot.users.get(applicant_id)
     if applicant is None:

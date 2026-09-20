@@ -464,7 +464,7 @@
 | `/admin/tools/{tool_id}/config` | PUT | 更新工具配置 |
 | `/admin/metrics` | GET | LLM 调用次数、Token 成本、平均响应时间、完成率、转人工率 |
 | `/admin/departments` | GET | 部门树（含主管与上游 `external_id`，用于核对组织数据完整性） |
-| `/admin/approval-rules` | GET / POST | 审批路由规则：查询 / 新增或更新（带 `id` 为更新）；校验 `approver_type`、`approval_mode`、金额区间与 `step_order` |
+| `/admin/approval-rules` | GET / POST | 审批路由规则：查询 / 新增或更新（带 `id` 为更新）；校验 `approver_type`、`approval_mode`、金额区间、`step_order` 与 `condition`（按槽位分支的条件，算子 eq/ne/gt/gte/lt/lte/in/not_in） |
 | `/admin/approval-rules/{rule_id}` | DELETE | 删除规则（在途审批不受影响，步骤模式在生成审批链时已快照） |
 | `/admin/approval-delegations` | GET / POST | 代理审批委派：查询 / 新增（`delegator_id ≠ delegate_id`、`end_at > start_at`） |
 | `/admin/org/sync` | POST | 手动触发组织同步；失败不修改组织数据，返回 `ok=false` 与原因 |

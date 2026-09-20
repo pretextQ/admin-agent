@@ -24,17 +24,20 @@ import argparse
 import asyncio
 import csv
 import io
+import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin_ai.core.approval.conditions import ConditionError, validate_conditions
 from app.admin_ai.db.database import get_session_factory
 from app.admin_ai.db.models import ApprovalMode, ApprovalRuleModel, ApproverType, generate_uuid
 
 CSV_HEADERS = [
     "business_type",
+    "condition",
     "amount_min",
     "amount_max",
     "step_order",
@@ -56,6 +59,38 @@ def _decimal(value: str | None) -> Decimal | None:
         raise SystemExit(f"金额格式非法：{value}") from exc
 
 
+def _parse_condition(raw: str | None) -> list[dict] | None:
+    """解析条件参数：JSON 字符串 → 条件列表；非法直接退出并说明用法。"""
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"条件不是合法 JSON：{exc}") from exc
+    try:
+        validate_conditions(parsed)
+    except ConditionError as exc:
+        raise SystemExit(f"条件非法：{exc}") from exc
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
+def _format_condition(condition) -> str:
+    """条件渲染成简短可读形式，如 days<=2、seal_type=合同章。"""
+    if not condition:
+        return "-"
+    items = condition if isinstance(condition, list) else [condition]
+    parts = []
+    for item in items:
+        if not isinstance(item, dict):
+            parts.append(str(item))
+            continue
+        symbol = {"eq": "=", "ne": "!=", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}.get(
+            item.get("op"), str(item.get("op"))
+        )
+        parts.append(f"{item.get('slot')}{symbol}{item.get('value')}")
+    return " 且 ".join(parts)
+
+
 def _dump(rule: ApprovalRuleModel) -> dict[str, str]:
     return {
         "id": rule.id,
@@ -63,6 +98,7 @@ def _dump(rule: ApprovalRuleModel) -> dict[str, str]:
         "amount_min": "" if rule.amount_min is None else str(rule.amount_min),
         "amount_max": "" if rule.amount_max is None else str(rule.amount_max),
         "step_order": str(rule.step_order),
+        "condition": json.dumps(rule.condition, ensure_ascii=False) if rule.condition else "",
         "approver_type": rule.approver_type.value,
         "approver_param": rule.approver_param or "",
         "approval_mode": rule.approval_mode.value,
@@ -82,7 +118,9 @@ async def cmd_list(db: AsyncSession, args: argparse.Namespace) -> int:
     if not rules:
         print("暂无审批规则。")
         return 0
-    print(f"{'ID':<38}{'业务':<10}{'金额区间':<20}{'步':<3}{'审批人':<22}{'模式':<10}{'状态':<6}备注")
+    print(
+        f"{'ID':<38}{'业务':<10}{'金额区间':<20}{'步':<3}{'审批人':<22}{'条件':<24}{'状态':<6}备注"
+    )
     for rule in rules:
         if rule.amount_min is None and rule.amount_max is None:
             amount = "无金额"
@@ -94,14 +132,16 @@ async def cmd_list(db: AsyncSession, args: argparse.Namespace) -> int:
             f":{rule.approver_param}" if rule.approver_param else ""
         )
         state = "启用" if rule.enabled else "停用"
+        condition = _format_condition(rule.condition)
         print(
             f"{rule.id:<38}{rule.business_type:<10}{amount:<20}{rule.step_order:<3}"
-            f"{approver:<22}{rule.approval_mode.value:<10}{state:<6}{rule.remark or ''}"
+            f"{approver:<22}{condition:<24}{state:<6}{rule.remark or ''}"
         )
     return 0
 
 
 async def cmd_add(db: AsyncSession, args: argparse.Namespace) -> int:
+    condition = _parse_condition(args.condition)
     rule = ApprovalRuleModel(
         id=generate_uuid(),
         business_type=args.business_type,
@@ -112,6 +152,7 @@ async def cmd_add(db: AsyncSession, args: argparse.Namespace) -> int:
         approver_param=args.param,
         approval_mode=ApprovalMode(args.mode),
         required=not args.optional,
+        condition=condition,
         remark=args.remark,
     )
     db.add(rule)
@@ -214,6 +255,7 @@ async def cmd_import(db: AsyncSession, args: argparse.Namespace) -> int:
                 step_order=int(row.get("step_order") or 1),
                 approver_type=ApproverType(approver_type),
                 approver_param=(row.get("approver_param") or "").strip() or None,
+                condition=_parse_condition(row.get("condition")),
                 approval_mode=ApprovalMode((row.get("approval_mode") or "any_one").strip()),
                 required=(row.get("required") or "true").strip().lower() != "false",
                 enabled=(row.get("enabled") or "true").strip().lower() != "false",
@@ -270,6 +312,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--param", default=None, help="role 的角色名或 user 的用户 ID")
     p_add.add_argument("--mode", default=ApprovalMode.ANY_ONE.value, choices=[m.value for m in ApprovalMode])
     p_add.add_argument("--optional", action="store_true", help="标记为非必需步骤（解析不出时跳过）")
+    p_add.add_argument(
+        "--condition",
+        default=None,
+        help=(
+            '按槽位分支的条件（JSON），例如 [{"slot":"days","op":"gt","value":2}]；'
+            "算子支持 eq/ne/gt/gte/lt/lte/in/not_in"
+        ),
+    )
     p_add.add_argument("--remark", default=None)
 
     for name in ("enable", "disable", "delete"):

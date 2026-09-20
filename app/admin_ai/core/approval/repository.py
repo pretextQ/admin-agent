@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin_ai.core.approval.conditions import build_rule_context
 from app.admin_ai.core.approval.router import (
     DelegationInfo,
     DepartmentInfo,
@@ -70,6 +71,7 @@ def rule_info(model: ApprovalRuleModel) -> RuleInfo:
         approval_mode=mode.value if hasattr(mode, "value") else str(mode),
         required=bool(model.required),
         enabled=bool(model.enabled),
+        condition=model.condition,
     )
 
 
@@ -167,15 +169,20 @@ async def route_approval(
 ) -> RoutingOutcome:
     """装载组织数据并计算审批链；无法解析时抛 `RoutingError`。
 
-    `amount` 未显式传入时从 `slots` 推断。
+    `amount` 未显式传入时从 `slots` 推断；条件求值用 `build_rule_context` 构造的上下文
+    （槽位原值 + 派生字段，如请假/差旅的 `days`）。
     """
-    resolved_amount = amount if amount is not None else extract_amount(slots)
+    context = build_rule_context(business_type, slots)
+    resolved_amount = amount if amount is not None else extract_amount(context)
+    if resolved_amount is not None:
+        context.setdefault("amount", resolved_amount)
     return resolve_chain(
         rules=await load_rules(db, business_type),
         snapshot=await load_org_snapshot(db),
         applicant_id=applicant_id,
         business_type=business_type,
         amount=resolved_amount,
+        context=context,
         delegations=await load_delegations(db),
         occurred_at=occurred_at,
     )

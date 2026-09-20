@@ -7,9 +7,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.admin_ai.core.auth.jwt_token import create_access_token

@@ -19,7 +19,7 @@
   测试基线升至 133 passed，E2E 冒烟 9/9 在真实 LLM 下通过。
 - **Batch 9~13 已完成并提交**：文档全量同步、200 人企业级设计评审与两份设计补丁、
   需求文档 V1.4、**LLM 数据脱敏与合规（评审 B-1）**、**组织架构与审批路由（评审 B-2）**；
-  测试基线升至 **192 passed, 7 deselected**（另有 7 个真实 PG 集成用例），
+  测试基线升至 **223 passed, 17 deselected**（另有 17 个真实 PG 集成用例），
   E2E 冒烟 9/9（改为跨用户真实审批路由）。整改明细见文末附录。
 
 ### 问题分级统计（评审基线与当前状态）
@@ -37,12 +37,12 @@
 
 | 项 | 命令 | 初始结果 | 当前结果（2026-09-20） |
 |----|------|----------|----------|
-| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **192 passed, 7 deselected** |
+| 后端测试 | `python -m pytest tests/admin_ai -q` | 2 failed, 29 passed | **223 passed, 17 deselected** |
 | 前端类型检查 | `pnpm -C frontend exec tsc -b` | 通过 | 通过 |
 | 前端 lint | `pnpm -C frontend lint` | 0 error / 1 warning | 0 error / 1 warning |
 | 前端构建 | `pnpm -C frontend build` | 通过 | 通过 |
 | 端到端冒烟 | `PYTHONPATH=. python scripts/e2e_smoke.py` | 未实现 | **9/9 通过**（真实 DeepSeek + 跨用户审批路由） |
-| 集成用例 | `pytest -m integration` | 需 asyncpg/DB | **7/7 通过**（真实 PostgreSQL） |
+| 集成用例 | `pytest -m integration` | 需 asyncpg/DB | **17/17 通过**（真实 PostgreSQL） |
 | lint/format | `ruff check app/ tests/` | 未执行 | 399 项待清（333 可自动修，详见交接文档 P2-14；Batch 13 新增文件零告警） |
 
 > 环境说明：开发机系统 Python 为 3.8.10，本项目**用 uv 隔离安装 Python 3.12** 并建 `.venv`

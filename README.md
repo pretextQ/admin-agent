@@ -374,6 +374,7 @@ alembic downgrade -1
 | `ORG_SYNC_PROVIDER` | 组织数据来源：`csv` / `http`（HR 组织接口）/ `disabled` | `csv` |
 | `ORG_SYNC_CSV_DIR` | CSV 目录（格式样例见 `scripts/sample_org/`） | `data/org` |
 | `HR_ORG_BASE_URL` / `HR_ORG_TOKEN` | HR 组织接口地址与令牌（`provider=http` 时必填） | - |
+| `APPROVAL_REQUIRED_BUSINESS_TYPES` | 必须走审批链的业务类型（未配规则时转人工指派） | `["expense","seal","leave","material","asset","travel"]` |
 | `LLM_EXCLUDED_BUSINESS_TYPES` | 不走外部 LLM 的涉密业务类型 | `["certificate","seal"]` |
 | `REDACT_AMOUNT` | 是否连金额一并占位化 | `false` |
 | `CHROMA_HOST` / `CHROMA_PORT` | 向量库地址 | `localhost` / `8005` |
@@ -437,6 +438,7 @@ alembic downgrade -1
 - [x] 对话接口接上编排器（chat.py → orchestrator.process()）
 - [x] 审批多级链（多步审批 / 加签 / 状态校验）
 - [x] **审批路由按金额与部门分级**（组织架构 + 审批规则 + 代理审批，APR-001/002）
+- [x] **审批覆盖场景规则**（按槽位条件分支：请假/差旅天数、用印印章类型、资产价值）
 - [x] 组织架构同步（HR 接口 / CSV 降级，失败沿用旧快照）
 - [x] 数据归属查询范围（本人 / 本部门 / 全量，越范围访问记审计）
 - [x] 飞书 OAuth 登录（授权码模式 / dev-login）
@@ -448,7 +450,7 @@ alembic downgrade -1
 - [x] 转人工落地（会话状态 + 消息落库 + 属主校验 + 通知）
 - [x] **LLM 接入（DeepSeek）**：意图识别、槽位抽取、**回复生成**（`Orchestrator._compose_reply`），LLM 不可用时自动回退规则/模板
 - [x] 环境一键重建与数据备份脚本（`scripts/setup_dev_env.sh` / `scripts/db_backup.sh`）
-- [x] 单元测试（192 个通过；另有 7 个真实 PG 集成用例）
+- [x] 单元测试（223 个通过；另有 17 个真实 PG 集成用例）
 - [ ] RAG 嵌入模型落地（当前向量检索超时降级；DeepSeek 无 embedding API，需另配嵌入服务或本地模型）
 - [ ] 制度问答回复由 LLM 润色（当前 `compose_policy_answer` 仍为模板拼装，但保留引用来源）
 - [ ] `status_query`（查进度/余额）闭环（意图已识别，尚未消费）

@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     HR_ORG_BASE_URL: str = ""
     HR_ORG_TOKEN: str = ""
     ORG_SYNC_TIMEOUT_SECONDS: float = 10.0
+    # 必须走审批链的业务类型：落在其中的业务若一条规则都没配 → 转人工指派并告警（不静默完成）。
+    # ⚠️ 增删此项等于改变业务的审批要求，需与行政/财务确认；规则本身用
+    # scripts/manage_approval_rules.py 或 /admin/approval-rules 维护。
+    APPROVAL_REQUIRED_BUSINESS_TYPES: list[str] = Field(
+        default_factory=lambda: ["expense", "seal", "leave", "material", "asset", "travel"]
+    )
 
     OA_SERVICE_URL: str = "http://localhost:8001"
     FINANCE_SERVICE_URL: str = "http://localhost:8002"

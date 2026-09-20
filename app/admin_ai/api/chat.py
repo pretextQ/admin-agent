@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026  Admin AI Team, All rights reserved.
 """对话接口。"""
 
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_ai.api.response import ApiResponse, BusinessError
 from app.admin_ai.api.schemas import ChatRequest, ChatResponse, ConfirmRequest, TransferRequest
+from app.admin_ai.config import get_config
 from app.admin_ai.core.agent.orchestrator import AgentContext
 from app.admin_ai.core.agent.state_store import (
     ConversationState,
@@ -38,7 +38,6 @@ from app.admin_ai.db.models import (
     TaskModel,
     TaskStatus,
     TaskType,
-    UserModel,
     utc_now,
 )
 from app.admin_ai.services.notification_service import NotificationService, notify_admins
@@ -60,7 +59,8 @@ TASK_LABELS = {
     "certificate": "证明开具",
     "onboarding": "入离职办理",
 }
-# 与编排器 HIGH_RISK_TYPES 对应的高风险业务
+# 需要「二次确认卡片」的高风险业务（与编排器 HIGH_RISK_TYPES 对应）。
+# 注意与「需要审批」区分：审批清单是可配置的 APPROVAL_REQUIRED_BUSINESS_TYPES（见 config.py）。
 HIGH_RISK_BUSINESS = {"expense", "seal"}
 
 
@@ -133,6 +133,18 @@ async def _create_approval_chain(
         await _notify_manual_assignment(db, task)
         return False
 
+    if not outcome.requires_approval:
+        # 该业务配了审批规则，但本次请求不落在任何区间/条件内（如单价 ≤100 元的普通物资）
+        clear_routing_note(task)
+        task.status = TaskStatus.COMPLETED
+        task.completed_at = utc_now()
+        logger.info(
+            "本次请求无需审批，任务直接完成",
+            task_id=task.id,
+            business_type=business_type,
+        )
+        return True
+
     clear_routing_note(task)
     task.status = TaskStatus.APPROVING
     task.approver_id = first_step_approver(outcome)
@@ -194,7 +206,7 @@ async def _save_chat_turn(
     ))
 
     # 工具执行成功时创建任务记录，供任务列表/详情/时间线展示。
-    # 低风险业务自动完成；高风险业务按规则路由审批链（无法解析则转人工指派）。
+    # 需要审批的业务按规则路由审批链（无法解析则转人工指派）；其余业务直接完成。
     business_type = result.get("task_type")
     if business_type:
         try:
@@ -203,19 +215,20 @@ async def _save_chat_turn(
             task_type = None
         if task_type:
             slots = result.get("slots") or {}
-            is_high_risk = business_type in HIGH_RISK_BUSINESS
+            needs_confirmation = business_type in HIGH_RISK_BUSINESS
+            needs_approval = business_type in get_config().APPROVAL_REQUIRED_BUSINESS_TYPES
             task = TaskModel(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 type=task_type,
                 title=_build_task_title(business_type, slots),
                 data=slots,
-                risk_level="high" if is_high_risk else "low",
-                requires_confirmation=is_high_risk,
+                risk_level=_risk_level(needs_confirmation, needs_approval),
+                requires_confirmation=needs_confirmation,
             )
             db.add(task)
 
-            if is_high_risk:
+            if needs_approval:
                 await db.flush()  # 先取 task.id，审批记录外键依赖它
                 await _create_approval_chain(
                     db,
@@ -227,6 +240,13 @@ async def _save_chat_turn(
             else:
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = utc_now()
+
+
+def _risk_level(needs_confirmation: bool, needs_approval: bool) -> str:
+    """任务风险级别：需二次确认=high，仅需审批=medium，其余=low（与场景文档一致）。"""
+    if needs_confirmation:
+        return "high"
+    return "medium" if needs_approval else "low"
 
 
 @router.post("/send", response_model=ApiResponse[ChatResponse])

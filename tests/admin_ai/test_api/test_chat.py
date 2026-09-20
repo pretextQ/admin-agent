@@ -34,7 +34,6 @@ from app.admin_ai.db.models import (
     TaskModel,
     TaskStatus,
     TaskType,
-    UserModel,
 )
 from app.admin_ai.main import create_app
 
@@ -336,39 +335,45 @@ async def test_multi_turn_slot_filling_completes() -> None:
     app.state.orchestrator = orchestrator
     app.state.state_store = InMemoryConversationStateStore()
     db = _install_permissive_db(app)
+    outcome = RoutingOutcome(steps=(
+        ApprovalStep(step=1, approver_id="mgr-1", source="self_dept_manager"),
+    ))
     transport = ASGITransport(app=app)
     headers = _make_auth_headers()
 
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        first = await client.post(
-            "/api/v1/chat/send",
-            json={"message": "我要请假", "conversation_id": "conv-multi"},
-            headers=headers,
-        )
-        assert first.json()["data"]["requires_action"] is True
+    with patch("app.admin_ai.api.chat.route_approval", AsyncMock(return_value=outcome)):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.post(
+                "/api/v1/chat/send",
+                json={"message": "我要请假", "conversation_id": "conv-multi"},
+                headers=headers,
+            )
+            assert first.json()["data"]["requires_action"] is True
 
-        second = await client.post(
-            "/api/v1/chat/send",
-            json={
-                "message": "年假 2026-09-20 到 2026-09-21",
-                "conversation_id": "conv-multi",
-            },
-            headers=headers,
-        )
+            second = await client.post(
+                "/api/v1/chat/send",
+                json={
+                    "message": "年假 2026-09-20 到 2026-09-21",
+                    "conversation_id": "conv-multi",
+                },
+                headers=headers,
+            )
 
     body = second.json()["data"]
     assert "操作已完成" in body["content"]
     assert body.get("requires_action") is not True
     assert tool.calls, "补齐槽位后应调用工具"
 
-    # 成功执行应创建任务记录（低风险自动完成），供任务列表展示
+    # 成功执行应创建任务记录（请假需审批：中级风险 + 审批链）
     task_adds = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], TaskModel)]
     assert len(task_adds) == 1
     assert task_adds[0].type == TaskType.LEAVE
     assert "年假" in task_adds[0].title
     assert task_adds[0].conversation_id == "conv-multi"
-    assert task_adds[0].risk_level == "low"
-    assert task_adds[0].status == TaskStatus.COMPLETED
+    assert task_adds[0].risk_level == "medium"
+    assert task_adds[0].status == TaskStatus.APPROVING
+    approvals = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], ApprovalModel)]
+    assert [a.approver_id for a in approvals] == ["mgr-1"]
 
 
 def _confirm_orchestrator(captured: list[Any]) -> AsyncMock:

@@ -8,6 +8,24 @@
 ## [Unreleased]
 
 ### 新增
+- **审批覆盖面补齐：规则支持按槽位条件分支 + 四个业务类型接入审批**
+  - `core/approval/conditions.py`：条件求值器（算子受限 eq/ne/gt/gte/lt/lte/in/not_in，不做表达式解析）
+    与派生上下文（`days` 由起止日期算出，含首含尾）；**槽位缺失即条件不成立**，绝不猜测
+  - `approval_rules.condition`（JSON，可空）+ 迁移 `003`：按场景文档导入默认规则并拆分支
+    - 用印：`seal_type = 合同章` → 法务（`role:legal`）；其余 → 部门主管（场景 10）
+    - 请假：`days ≤ 2` → 主管；`days > 2` → 主管 + HR 复核（`role:hr`）；天数算不出走兜底（场景 05）
+    - 差旅：`days ≤ 5` → 主管；`days > 5` → 总监 + 主管两级（场景 08）
+    - 资产：价值 ≥5000 → 总监；≤5000 或价值未知 → 主管（场景 09）
+    - 物资：单价 ≥100 → 主管；兜底 → 主管（场景 04，分级待接入库存单价）
+  - **兜底规则**（金额区间与条件都为空）在同一步骤内让位于条件/区间规则，避免分支被稀释成多人并行
+  - **审批清单与二次确认解耦**：`APPROVAL_REQUIRED_BUSINESS_TYPES`（默认 6 类）决定是否走审批，
+    `HIGH_RISK_BUSINESS` 仍只管二次确认卡片；请假/差旅等审批类任务风险级别为 `medium`
+  - **三种结果语义明确**：匹配→建链；该业务无规则（配置缺失）→转人工指派并告警；配了规则但本次不匹配
+    →无需审批、任务直接完成（不再一律报错转人工）
+  - 管理端与脚本支持 `condition` 字段（含 `validate_conditions` 校验）：`/admin/approval-rules`、
+    `manage_approval_rules.py`（新增 `--condition`、列表渲染条件、导入导出）
+  - 新增 32 个用例（条件求值 20、匹配与语义 10、管理端 2）+ 10 个真实 PG 集成用例
+    （直接验证迁移导入的默认规则）；E2E 冒烟扩展为「请假 + 报销」双链路跨用户审批
 - **组织架构与审批路由落地（评审 B-2，唯一未完成的阻断项）**：审批人不再取「首个管理员」，改按「业务类型 + 金额 + 申请人部门」路由，使审批链具备公司内部授权效力
   - `core/approval/router.py`：**纯函数**路由算法——规则匹配（含 min、不含 max；无金额业务只匹配区间为 NULL 的规则）、逐级解析（self/parent/top 部门主管、role、user）、**自审拦截与上溯**、停用/离职上溯、链内去重、委派替换
   - `core/approval/repository.py`：组织快照装载（含已停用用户，否则无法判断"审批人已停用"）、规则与委派装载、审批链落库、路由失败原因记录
@@ -49,6 +67,8 @@
 
 ### 修复
 - **修复一直挂着的集成用例**：`test_health.py` 的 `/tasks/my` 集成用例因全局审计打桩把会话工厂替换成 MagicMock，被 `-m integration` 选中时必然报 `object MagicMock can't be used in 'await' expression`（默认跳过所以从未暴露）；改为自建引擎并覆盖 `get_db_session` 依赖后，集成套件 7/7
+- **审批只覆盖两类业务**：此前仅 expense/seal 会发起审批，请假/物资/差旅/资产虽在场景中要求审批却「提交即完成」；
+  现按场景规则全部接入（物资暂未分级），清单由配置驱动
 - **审批人硬编码**：`api/chat.py` 原取「首个 admin」作为审批人（与场景文档 APR-001/002 相差一整个审批层级体系），现改为按规则路由
 - **审批驳回留下悬挂待办**：驳回后其余 `pending` 记录未关闭，任务已失败却仍出现在他人的待审批列表
 - **加签记录缺少步骤模式**：加签生成的新审批记录补 `mode` 与 `approver_source`，与原步骤保持一致
@@ -76,7 +96,7 @@
 ### 变更
 - **E2E 冒烟改为跨用户路由验证**：报销由普通员工 `emp999` 提交、部门主管 `admin001` 审批，并断言 ≤2000 元为单级审批链——原脚本用 admin001 既申请又审批，恰好掩盖了「首个管理员」的缺陷（即设计 T-3 自审场景）
 - `/tasks/my` 返回新增 `scope` 字段；`/admin/*` 新增 5 个端点（全部走 `get_admin_user`）
-- 测试基线：**pytest 192 passed, 7 deselected**（集成用例需显式 `-m integration`，真实 PG 上 7/7 通过）；E2E 冒烟 9/9
+- 测试基线：**pytest 223 passed, 17 deselected**（集成用例需显式 `-m integration`，真实 PG 上 17/17 通过）；E2E 冒烟 9/9
 - **接入 DeepSeek 作为 LLM**（`OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-flash`）：意图识别与槽位抽取改走真实 LLM；实测发不含规则关键词的消息可识别为 `leave_request` 并追问槽位。`pytest` 95 passed、`e2e_smoke` 9/9 无回归。该 Key 可用模型为 `deepseek-flash` 与 `deepseek-v4-pro`（`deepseek-chat` 等旧名会被路由到 flash），5 条典型消息两模型均 5/5 命中，故取更快的 flash
 - **RAG 方案重排**：DeepSeek 不提供 embedding API（`POST /embeddings` 返回 404），向量化不能复用它——嵌入改为二选一：另配智谱 `embedding-3` 等 OpenAI 兼容嵌入服务（零本机资产），或本地 `BAAI/bge-small-zh-v1.5`（95MB，离线可用）。待抽 `Embedder` 接口后落实
 - 确认卡片 `card_data` 对齐 API 规格第 10 节：`{type, title, data, actions, warning}`

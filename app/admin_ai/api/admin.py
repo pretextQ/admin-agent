@@ -18,6 +18,7 @@ from app.admin_ai.api.schemas import (
     OrgSyncRequest,
 )
 from app.admin_ai.config import get_config
+from app.admin_ai.core.approval.conditions import ConditionError, validate_conditions
 from app.admin_ai.core.approval.sync import sync_org
 from app.admin_ai.core.auth.deps import get_admin_user
 from app.admin_ai.db.database import get_db_session
@@ -261,6 +262,10 @@ async def upsert_approval_rule(
         raise BusinessError(code=40001, message="amount_min 必须小于 amount_max")
     if payload.step_order < 1:
         raise BusinessError(code=40001, message="step_order 从 1 开始")
+    try:
+        validate_conditions(payload.condition)
+    except ConditionError as exc:
+        raise BusinessError(code=40001, message=f"审批条件非法：{exc}") from exc
 
     rule = None
     if payload.id:
@@ -282,6 +287,7 @@ async def upsert_approval_rule(
     rule.approval_mode = approval_mode
     rule.required = payload.required
     rule.enabled = payload.enabled
+    rule.condition = payload.condition or None
     rule.remark = payload.remark
     rule.updated_at = utc_now()
     await db.commit()
@@ -403,6 +409,7 @@ def _rule_to_dict(rule: ApprovalRuleModel) -> dict:
             if hasattr(rule.approval_mode, "value")
             else rule.approval_mode
         ),
+        "condition": rule.condition or None,
         "required": rule.required,
         "enabled": rule.enabled,
         "remark": rule.remark,
