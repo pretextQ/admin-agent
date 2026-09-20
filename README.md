@@ -433,7 +433,7 @@ alembic downgrade -1
 - [x] 项目骨架代码（FastAPI + SQLAlchemy + 路由 + 中间件）
 - [x] 核心模块开发（编排器 / 意图识别 / 工具 / 规则引擎）
 - [x] 数据库模型（User / Conversation / Message / Task / Approval / Audit / Knowledge）
-- [x] Alembic 首次迁移（7 张表）
+- [x] Alembic 迁移（001：7 张基础表；002：组织架构与审批路由三表）
 - [x] 对话接口接上编排器（chat.py → orchestrator.process()）
 - [x] 审批多级链（多步审批 / 加签 / 状态校验）
 - [x] **审批路由按金额与部门分级**（组织架构 + 审批规则 + 代理审批，APR-001/002）
@@ -456,7 +456,7 @@ alembic downgrade -1
 - [ ] WebSocket 实时对话
 - [ ] Prometheus 指标接入
 - [ ] Docker 部署文件落地
-- [ ] lint/format 债清理（`ruff check` 约 336 项，详见交接文档 P2）
+- [ ] lint/format 债清理（`ruff check app/ tests/` 实测 399 项，详见交接文档 P2-14）
 - [ ] 上线部署
 
 ### 前端
