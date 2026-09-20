@@ -54,6 +54,20 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_TEMPERATURE: float = 0.0
 
+    # ============ LLM 脱敏与合规（设计见 docs/architecture/LLM数据脱敏与合规设计.md）============
+    # 是否启用「脱敏 + L4 拦截」。生产环境禁止关闭（见下方 fail-fast 校验）。
+    LLM_REDACTION_ENABLED: bool = True
+    # 是否记录 LLM 调用审计（只记脱敏类别与用量，不记原文）
+    LLM_AUDIT_ENABLED: bool = True
+    # 是否连金额一并占位化（合规要求更严时开启）
+    REDACT_AMOUNT: bool = False
+    # 不走外部 LLM 的业务类型（涉密：证明开具、用印/合同）
+    LLM_EXCLUDED_BUSINESS_TYPES: list[str] = Field(
+        default_factory=lambda: ["certificate", "seal"]
+    )
+    # 工号识别正则（留空则不识别）；示例："EMP\\d{4,}"
+    LLM_EMPLOYEE_ID_PATTERN: str = ""
+
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8005
     # 本地嵌入式持久化目录：Chroma 服务不可达时使用，无需独立部署
@@ -92,6 +106,15 @@ class Settings(BaseSettings):
                 raise ValueError("生产环境必须配置 FEISHU_APP_SECRET")
             if not self.FEISHU_REDIRECT_URI:
                 raise ValueError("生产环境必须配置 FEISHU_REDIRECT_URI")
+            if not self.LLM_REDACTION_ENABLED:
+                raise ValueError(
+                    "生产环境必须启用 LLM_REDACTION_ENABLED（关闭将导致 L3 数据未经脱敏发往外部 LLM）"
+                )
+            if self.DEBUG:
+                raise ValueError(
+                    "生产环境必须关闭 DEBUG（SQL echo 会把含业务数据的 SQL 打进日志，"
+                    "绕过脱敏层的保护范围）"
+                )
         return self
 
 

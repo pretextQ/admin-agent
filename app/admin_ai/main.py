@@ -29,6 +29,34 @@ from app.admin_ai.utils.logger import configure_logging
 logger = structlog.get_logger(__name__)
 
 
+async def _load_known_names(gateway) -> None:
+    """从 users 表加载姓名，供脱敏层做精确匹配（不做通用 NER，避免误判）。
+
+    加载失败只告警不阻断启动：姓名脱敏降级为仅正则规则（手机号/邮箱等仍生效）。
+    """
+    try:
+        from sqlalchemy import select
+
+        from app.admin_ai.db.database import get_session_factory
+        from app.admin_ai.db.models import UserModel
+
+        factory = get_session_factory()
+        async with factory() as session:
+            rows = (
+                await session.execute(
+                    select(UserModel.name).where(
+                        UserModel.is_active == True,  # noqa: E712
+                        UserModel.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ).scalars().all()
+        names = {name for name in rows if name}
+        gateway.update_known_names(names)
+        logger.info("脱敏层已加载已知姓名", count=len(names))
+    except Exception as exc:  # noqa: BLE001 - 姓名脱敏失效不应阻断启动
+        logger.warning("加载已知姓名失败，姓名脱敏降级为正则规则", error=str(exc))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理。"""
@@ -47,6 +75,9 @@ async def lifespan(app: FastAPI):
 
     # 初始化 LLM 客户端（未配置密钥时降级为规则回退）
     llm_client = build_llm_client(config)
+    # 加载已知姓名供脱敏层精确匹配（200 人规模，启动时一次加载开销可忽略）
+    if llm_client is not None and config.LLM_REDACTION_ENABLED:
+        await _load_known_names(llm_client)
 
     # 初始化 RAG 检索器（Chroma 服务优先，回退本地嵌入式）
     retriever = build_retriever(config)

@@ -55,11 +55,13 @@ class SlotExtractor:
         business_type: Optional[str] = None,
         existing_slots: Optional[dict[str, Any]] = None,
         attachments: Optional[list[str]] = None,
+        session_key: Optional[str] = None,
     ) -> dict[str, Any]:
         """从消息中抽取槽位，并合并已有槽位。
 
         始终先执行规则回退抽取（成本低、保证有基础结果），
         若 LLM 可用则用其结构化结果覆盖，LLM 失败时静默降级。
+        `session_key` 用于脱敏占位符的会话内一致性。
         """
         existing = dict(existing_slots or {})
         fallback = self._fallback_extract(message, business_type, existing)
@@ -68,9 +70,9 @@ class SlotExtractor:
             return self._apply_attachment_slots(fallback, business_type, attachments)
 
         try:
-            llm_slots = await self._llm_extract(message, business_type, existing)
-        except Exception as exc:  # LLM 不可用时不得阻断主流程
-            logger.error("槽位抽取失败，回退规则抽取", error=str(exc))
+            llm_slots = await self._llm_extract(message, business_type, existing, session_key)
+        except Exception as exc:  # LLM 不可用时不得阻断主流程（含 L4 拦截与涉密业务）
+            logger.warning("槽位抽取未走 LLM，回退规则抽取", error=str(exc))
             fallback = self._apply_attachment_slots(fallback, business_type, attachments)
             return fallback
 
@@ -93,22 +95,25 @@ class SlotExtractor:
         message: str,
         business_type: str,
         existing: dict[str, Any],
+        session_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """调用 LLM 抽取槽位。"""
+        """调用 LLM 抽取槽位（经统一网关脱敏；命中 L4 会抛 LLMCallBlockedError 由上层回退）。"""
         schema = self.get_required_slots(business_type)
         prompt = SLOT_PROMPT.format(
             slot_schema=json.dumps({business_type: schema}, ensure_ascii=False)
         )
-        response = await self._llm.chat.completions.create(
-            model=self._model,
+        content = await self._llm.chat(
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": message},
             ],
+            purpose="slot",
+            session_key=session_key,
+            business_type=business_type,
             temperature=0,
             response_format={"type": "json_object"},
         )
-        data = json.loads(response.choices[0].message.content)
+        data = json.loads(content)
         slots = data.get("slots", {})
         if not isinstance(slots, dict):
             return {}

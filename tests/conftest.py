@@ -47,21 +47,18 @@ def stub_audit_db(monkeypatch):
 
 @pytest.fixture
 def mock_llm() -> AsyncMock:
-    """LLM 桩。"""
+    """LLM 网关桩。
+
+    网关接口为 `await gateway.chat(messages, purpose=..., session_key=...) -> str`，
+    故这里按最后一条消息返回预置 JSON 文本（不再是供应商的 completion 对象）。
+    """
+
+    async def _chat(messages: list[dict[str, Any]], **_kwargs: Any) -> str:
+        prompt = (messages or [{}])[-1].get("content", "")
+        if "请假" in prompt or ("请" in prompt and "假" in prompt):
+            return '{"intent": "leave_request", "business_type": "leave", "confidence": 0.95}'
+        return '{"intent": "policy_query", "confidence": 0.9}'
+
     mock = AsyncMock()
-
-    def _completion(content: str) -> Any:
-        message = type("Message", (), {"content": content})()
-        choice = type("Choice", (), {"message": message})()
-        return type("Completion", (), {"choices": [choice]})()
-
-    async def _create(*args: Any, **kwargs: Any) -> Any:
-        prompt = kwargs.get("messages", [{}])[-1].get("content", "")
-        if "请假" in prompt or "请" in prompt and "假" in prompt:
-            return _completion(
-                '{"intent": "leave_request", "business_type": "leave", "confidence": 0.95}'
-            )
-        return _completion('{"intent": "policy_query", "confidence": 0.9}')
-
-    mock.chat.completions.create.side_effect = _create
+    mock.chat.side_effect = _chat
     return mock

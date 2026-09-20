@@ -282,14 +282,15 @@ def test_compose_policy_answer_formats_citations() -> None:
 
 
 def _llm_stub(text_or_error: object) -> Any:
-    """构造 LLM 桩：返回固定文本，或抛出指定异常。"""
+    """构造 LLM 网关桩：`chat()` 返回固定文本，或抛出指定异常。
+
+    网关接口为 `await gateway.chat(messages, purpose=..., session_key=...) -> str`。
+    """
     llm = AsyncMock()
     if isinstance(text_or_error, Exception):
-        llm.chat.completions.create.side_effect = text_or_error
-        return llm
-    message = type("Message", (), {"content": text_or_error})()
-    choice = type("Choice", (), {"message": message})()
-    llm.chat.completions.create.return_value = type("Completion", (), {"choices": [choice]})()
+        llm.chat.side_effect = text_or_error
+    else:
+        llm.chat.return_value = text_or_error
     return llm
 
 
@@ -359,6 +360,31 @@ async def test_llm_reply_prompt_receives_execution_result() -> None:
     orchestrator = _orchestrator_with_tool(llm)
     await orchestrator.process("", _confirmed_leave_context())
 
-    prompt = llm.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    prompt = llm.chat.call_args.kwargs["messages"][0]["content"]
     assert "年假" in prompt  # 业务槽位
     assert "ok" in prompt  # 工具返回内容
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_never_logs_user_message() -> None:
+    """应用日志不得写入用户消息原文。
+
+    SECURITY §6.2 要求「日志禁止写入 L3/L4 明文」——对话内容属 L3，
+    一旦进日志就脱离了 LLM 脱敏层的保护范围。
+    """
+    import json
+
+    from structlog.testing import capture_logs
+
+    orchestrator = _orchestrator_with_tool(None)
+    orchestrator.intent_recognizer.recognize = AsyncMock(
+        return_value={"intent": "policy_query", "confidence": 0.9}
+    )
+    context = AgentContext(user_id="u1", conversation_id="c1")
+
+    with capture_logs() as logs:
+        await orchestrator.process("我的手机号是 13812345678，帮我查制度", context)
+
+    dumped = json.dumps(logs, ensure_ascii=False, default=str)
+    assert "13812345678" not in dumped, "日志中出现用户原文（L3 明文禁令）"
+    assert "帮我查制度" not in dumped, "日志中出现用户原文（L3 明文禁令）"

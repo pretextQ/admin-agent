@@ -160,9 +160,14 @@ class Orchestrator:
 
             if not resume_slot_filling:
                 # 1. 意图识别
-                logger.info("开始处理", user_id=context.user_id, message=user_message[:50])
+                # 只记长度不记内容：对话属 L3 个人数据，SECURITY §6.2 禁止日志写入明文
+                logger.info(
+                    "开始处理", user_id=context.user_id, message_length=len(user_message)
+                )
                 context.state = AgentState.INTENT_RECOGNIZING
-                intent_result = await self.intent_recognizer.recognize(user_message)
+                intent_result = await self.intent_recognizer.recognize(
+                    user_message, session_key=context.conversation_id
+                )
                 context.intent = intent_result["intent"]
                 context.business_type = INTENT_TO_BUSINESS.get(context.intent)
 
@@ -202,7 +207,12 @@ class Orchestrator:
             # 6. 槽位抽取
             context.state = AgentState.SLOT_FILLING
             slots = await self.slot_extractor.extract(
-                user_message, context.intent or "", context.business_type, context.slots, attachments
+                user_message,
+                context.intent or "",
+                context.business_type,
+                context.slots,
+                attachments,
+                session_key=context.conversation_id,
             )
             context.slots.update(slots)
 
@@ -272,16 +282,17 @@ class Orchestrator:
                 slots=json.dumps(context.slots, ensure_ascii=False),
                 tool_result=tool_output,
             )
-            response = await self._llm.chat.completions.create(
-                model=self._model,
+            content = await self._llm.chat(
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": "请生成给用户的回复"},
                 ],
+                purpose="reply_generation",
+                session_key=context.conversation_id,
+                business_type=context.business_type,
                 temperature=0,
             )
-            content = (response.choices[0].message.content or "").strip()
-            return content or fallback
+            return (content or "").strip() or fallback
         except Exception as exc:  # noqa: BLE001 - 回复生成失败不影响业务流程
             logger.warning("LLM 回复生成失败，回退模板", error=str(exc))
             return fallback

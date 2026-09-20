@@ -10,6 +10,7 @@ from typing import Any, Optional
 import structlog
 
 from app.admin_ai.core.agent.prompt import INTENT_PROMPT
+from app.admin_ai.core.llm_redaction import LLMCallBlockedError
 
 logger = structlog.get_logger(__name__)
 
@@ -32,27 +33,37 @@ class IntentRecognizer:
         self,
         message: str,
         conversation_history: Optional[list[dict]] = None,
+        session_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """识别用户意图。"""
+        """识别用户意图。
+
+        `session_key`（会话 ID）用于脱敏占位符的会话内一致性——同一会话中同一人
+        必须映射到同一占位符，否则多轮对话语义会错乱。
+        """
         if self._llm is None:
             return self._fallback_recognize(message)
 
         try:
-            response = await self._llm.chat.completions.create(
-                model=self._model,
+            content = await self._llm.chat(
                 messages=[
                     {"role": "system", "content": INTENT_PROMPT},
                     {"role": "user", "content": message},
                 ],
+                purpose="intent",
+                session_key=session_key,
                 temperature=0,
                 response_format={"type": "json_object"},
             )
-            result = json.loads(response.choices[0].message.content)
+            result = json.loads(content)
             intent = result.get("intent", "other")
             if intent not in VALID_INTENTS:
                 intent = "other"
             result["intent"] = intent
             return result
+        except LLMCallBlockedError as exc:
+            # 命中 L4 或涉密业务：不得外发，直接走规则回退
+            logger.warning("意图识别被拦截，回退规则识别", reason=str(exc))
+            return self._fallback_recognize(message)
         except Exception as e:
             logger.error("意图识别失败", error=str(e))
             return {"intent": "other", "confidence": 0.0}

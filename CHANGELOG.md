@@ -8,6 +8,13 @@
 ## [Unreleased]
 
 ### 新增
+- **LLM 数据脱敏与合规落地（评审 B-1）**：外部大模型调用改走统一出入口，实现「拦截 → 脱敏 → 调用 → 回填 → 审计」全链路
+  - `core/llm_redaction.py`：按类别脱敏（手机号/邮箱/工号/姓名/金额可配）、L4 命中即中止（身份证/银行卡绝不外送）、占位符**会话内一致映射**（同一人始终同一占位符，避免多轮语义错乱）、回复占位符回填（未登记的保留不猜测）
+  - `core/llm_gateway.py`：统一出入口 `LLMGateway.chat()`，含 fail-closed（脱敏异常时拒绝调用而非直发原文）、涉密业务排除（证明开具/用印默认不走外部 LLM）、调用审计（只记脱敏类别与词元用量，不记原文）
+  - `core/llm.py` 工厂改返回网关；`intent`/`slot`/`orchestrator` 三处调用方接入并传递会话上下文；启动时从 `users` 表加载姓名供精确匹配
+  - 配置项：`LLM_REDACTION_ENABLED`（生产 fail-fast 禁止关闭）、`LLM_AUDIT_ENABLED`、`REDACT_AMOUNT`、`LLM_EXCLUDED_BUSINESS_TYPES`、`LLM_EMPLOYEE_ID_PATTERN`
+  - 真实环境验证：含手机号对话脱敏后正常完成（审计 `categories=['phone']`）；含身份证消息被拦截并回退规则路径（审计 `blocked=true, reason=id_card`）；证明开具不走外部 LLM；E2E 冒烟 9/9 无回归
+- **修复应用日志泄漏用户原文**：`Orchestrator` 曾把用户消息前 50 字写入日志（违反 SECURITY §6.2「日志禁止写入 L3 明文」），改为只记长度；按 TDD 补回归用例。另新增生产禁止 `DEBUG=true` 的 fail-fast（其 SQL echo 会把含数据的 SQL 打进日志）
 - **LLM 回复生成接入**：`Orchestrator._compose_reply` 在工具执行成功后用 `REPLY_PROMPT` 生成自然语言回复，替代固定话术"操作已完成"——实测回复能带出工具返回的关键信息（如"已为您提交 2026 年 9 月 25 日至 26 日的年假申请""受理编号 MOCK-2046C424""发票 INV-2026-777.pdf 已关联"）；LLM 未配置或调用失败时自动回退原模板且不阻断业务流程；`REPLY_PROMPT` 由"仅定义无调用方"的死模板改为实际使用（新增执行结果字段）
 - **环境一键重建脚本** `scripts/setup_dev_env.sh`：换机器后 clone 仓库执行即可恢复开发环境——检查/安装 uv、创建 venv 并装依赖、生成 `.env`、检测并拉起 PostgreSQL/Redis、建库迁移种子、自动跑 pytest 核验；幂等设计，`--check` 只体检不安装
 - **数据备份/恢复脚本** `scripts/db_backup.sh`：`pg_dump` 导出 admin_ai 库到 `backups/*.sql`（已 gitignore）并可恢复；恢复前自动生成当前数据快照以便回滚；内置处理 Windows 下 psql 的两个坑（MSYS 路径需 `cygpath` 转换、中文数据需 `PGCLIENTENCODING=UTF8`）
