@@ -1,0 +1,4 @@
+# 行尾规范：确保 shell 脚本在任何机器 clone 后都能被 Git Bash 执行。
+# 背景：本机 core.autocrlf=true，若不加此声明，.sh 会被检出为 CRLF，
+# 执行时报 "\r: command not found" 之类的错误（换机器场景下必踩）。
+*.sh text eol=lf
