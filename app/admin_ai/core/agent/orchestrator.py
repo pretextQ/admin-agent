@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -12,6 +13,7 @@ import structlog
 
 from app.admin_ai.core.agent.dialog import DialogManager
 from app.admin_ai.core.agent.intent import IntentRecognizer
+from app.admin_ai.core.agent.prompt import REPLY_PROMPT
 from app.admin_ai.core.agent.slot import SlotExtractor
 from app.admin_ai.core.rules.engine import RuleEngine
 from app.admin_ai.core.tools.registry import ToolRegistry
@@ -129,6 +131,8 @@ class Orchestrator:
         rule_engine: RuleEngine,
         tool_registry: ToolRegistry,
         retriever: Any = None,
+        llm_client: Any = None,
+        model: str = "gpt-4o-mini",
     ) -> None:
         self.intent_recognizer = intent_recognizer
         self.slot_extractor = slot_extractor
@@ -136,6 +140,8 @@ class Orchestrator:
         self.rule_engine = rule_engine
         self.tool_registry = tool_registry
         self.retriever = retriever
+        self._llm = llm_client
+        self._model = model
 
     async def process(
         self,
@@ -250,6 +256,36 @@ class Orchestrator:
         context.state = AgentState.EXECUTING
         return await self._execute_tool(context)
 
+    async def _compose_reply(self, context: AgentContext, fallback: str) -> str:
+        """把执行结果交给 LLM 转成自然语言；未配置或调用失败时回退模板。
+
+        回复生成属于锦上添花，失败不得影响业务结果，故异常一律降级处理。
+        """
+        if self._llm is None:
+            return fallback
+        try:
+            tool_output = ""
+            if context.tool_calls:
+                tool_output = str(context.tool_calls[-1].get("output", ""))
+            prompt = REPLY_PROMPT.format(
+                intent=context.intent or "",
+                slots=json.dumps(context.slots, ensure_ascii=False),
+                tool_result=tool_output,
+            )
+            response = await self._llm.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "请生成给用户的回复"},
+                ],
+                temperature=0,
+            )
+            content = (response.choices[0].message.content or "").strip()
+            return content or fallback
+        except Exception as exc:  # noqa: BLE001 - 回复生成失败不影响业务流程
+            logger.warning("LLM 回复生成失败，回退模板", error=str(exc))
+            return fallback
+
     async def _execute_tool(self, context: AgentContext) -> dict[str, Any]:
         """执行当前业务对应的工具并返回结果信封。"""
         context.state = AgentState.EXECUTING
@@ -278,7 +314,7 @@ class Orchestrator:
 
         context.state = AgentState.COMPLETED
         return {
-            "content": "操作已完成",
+            "content": await self._compose_reply(context, "操作已完成"),
             "task_type": context.business_type,
             "slots": context.slots,
         }

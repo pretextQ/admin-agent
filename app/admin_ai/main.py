@@ -63,6 +63,8 @@ async def lifespan(app: FastAPI):
         rule_engine=rule_engine,
         tool_registry=tool_registry,
         retriever=retriever,
+        llm_client=llm_client,
+        model=config.LLM_MODEL,
     )
     app.state.orchestrator = orchestrator
     logger.info("编排器初始化完成")

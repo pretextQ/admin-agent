@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### 新增
+- **LLM 回复生成接入**：`Orchestrator._compose_reply` 在工具执行成功后用 `REPLY_PROMPT` 生成自然语言回复，替代固定话术"操作已完成"——实测回复能带出工具返回的关键信息（如"已为您提交 2026 年 9 月 25 日至 26 日的年假申请""受理编号 MOCK-2046C424""发票 INV-2026-777.pdf 已关联"）；LLM 未配置或调用失败时自动回退原模板且不阻断业务流程；`REPLY_PROMPT` 由"仅定义无调用方"的死模板改为实际使用（新增执行结果字段）
 - **环境一键重建脚本** `scripts/setup_dev_env.sh`：换机器后 clone 仓库执行即可恢复开发环境——检查/安装 uv、创建 venv 并装依赖、生成 `.env`、检测并拉起 PostgreSQL/Redis、建库迁移种子、自动跑 pytest 核验；幂等设计，`--check` 只体检不安装
 - **数据备份/恢复脚本** `scripts/db_backup.sh`：`pg_dump` 导出 admin_ai 库到 `backups/*.sql`（已 gitignore）并可恢复；恢复前自动生成当前数据快照以便回滚；内置处理 Windows 下 psql 的两个坑（MSYS 路径需 `cygpath` 转换、中文数据需 `PGCLIENTENCODING=UTF8`）
 - **转人工落地**：`/chat/transfer` 由固定话术改为真实处理——校验会话存在性与属主后置 `conversations.status=transferred`、写入历史消息（meta 记录 `transfer_to_human` 与 `reason`）、清除会话待确认状态、调用 `NotificationService` 通知人工客服

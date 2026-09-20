@@ -279,3 +279,86 @@ def test_compose_policy_answer_formats_citations() -> None:
     assert "《A》" in answer and "《B》" in answer
     assert "…" in answer
     assert answer.count("a.pdf") == 1
+
+
+def _llm_stub(text_or_error: object) -> Any:
+    """构造 LLM 桩：返回固定文本，或抛出指定异常。"""
+    llm = AsyncMock()
+    if isinstance(text_or_error, Exception):
+        llm.chat.completions.create.side_effect = text_or_error
+        return llm
+    message = type("Message", (), {"content": text_or_error})()
+    choice = type("Choice", (), {"message": message})()
+    llm.chat.completions.create.return_value = type("Completion", (), {"choices": [choice]})()
+    return llm
+
+
+def _orchestrator_with_tool(llm_client: Any = None) -> Orchestrator:
+    """构造注册了"执行成功"工具的编排器，用于验证回复生成。"""
+    slot_extractor = MagicMock()
+    slot_extractor.check_completeness = MagicMock(return_value=[])
+    tool_registry = MagicMock()
+    mock_tool = AsyncMock()
+    mock_tool.execute.return_value = ToolResult.text("ok")
+    tool_registry.get_tool.return_value = mock_tool
+    return Orchestrator(
+        intent_recognizer=MagicMock(),
+        slot_extractor=slot_extractor,
+        dialog_manager=MagicMock(),
+        rule_engine=MagicMock(),
+        tool_registry=tool_registry,
+        llm_client=llm_client,
+        model="deepseek-flash",
+    )
+
+
+def _confirmed_leave_context() -> AgentContext:
+    return AgentContext(
+        user_id="u1",
+        conversation_id="c1",
+        confirmed=True,
+        business_type="leave",
+        slots={"leave_type": "年假", "start_date": "2026-09-20", "end_date": "2026-09-21"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_success_reply_generated_by_llm() -> None:
+    """接入 LLM 后，执行成功的回复应由 LLM 生成，而不是固定模板。"""
+    orchestrator = _orchestrator_with_tool(_llm_stub("您的年假申请已提交，9月20日至21日共2天。"))
+    result = await orchestrator.process("", _confirmed_leave_context())
+
+    assert result["content"] == "您的年假申请已提交，9月20日至21日共2天。"
+    assert "操作已完成" not in result["content"]
+
+
+@pytest.mark.asyncio
+async def test_tool_success_reply_falls_back_without_llm() -> None:
+    """未配置 LLM 时回退固定模板（保持既有行为）。"""
+    orchestrator = _orchestrator_with_tool(None)
+    result = await orchestrator.process("", _confirmed_leave_context())
+
+    assert result["content"] == "操作已完成"
+
+
+@pytest.mark.asyncio
+async def test_tool_success_reply_falls_back_on_llm_error() -> None:
+    """LLM 调用失败时回退模板，且不阻断主流程（任务仍算完成）。"""
+    orchestrator = _orchestrator_with_tool(_llm_stub(RuntimeError("api down")))
+    context = _confirmed_leave_context()
+    result = await orchestrator.process("", context)
+
+    assert result["content"] == "操作已完成"
+    assert context.state == AgentState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_llm_reply_prompt_receives_execution_result() -> None:
+    """发给 LLM 的提示词应包含业务数据与工具执行结果，便于生成准确回复。"""
+    llm = _llm_stub("好的")
+    orchestrator = _orchestrator_with_tool(llm)
+    await orchestrator.process("", _confirmed_leave_context())
+
+    prompt = llm.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "年假" in prompt  # 业务槽位
+    assert "ok" in prompt  # 工具返回内容
