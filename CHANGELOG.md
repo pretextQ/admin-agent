@@ -47,7 +47,7 @@
 - **前端 OAuth 回调**：先落 token 再调用 `/auth/me`，修复回调必然 401 跳回登录页的问题
 
 ### 变更
-- **接入 DeepSeek 作为 LLM**（`OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-chat`）：意图识别与槽位抽取改走真实 LLM；实测发不含规则关键词的消息可识别为 `leave_request` 并追问槽位。`pytest` 95 passed、`e2e_smoke` 9/9 无回归
+- **接入 DeepSeek 作为 LLM**（`OPENAI_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-flash`）：意图识别与槽位抽取改走真实 LLM；实测发不含规则关键词的消息可识别为 `leave_request` 并追问槽位。`pytest` 95 passed、`e2e_smoke` 9/9 无回归。该 Key 可用模型为 `deepseek-flash` 与 `deepseek-v4-pro`（`deepseek-chat` 等旧名会被路由到 flash），5 条典型消息两模型均 5/5 命中，故取更快的 flash
 - **RAG 方案重排**：DeepSeek 不提供 embedding API（`POST /embeddings` 返回 404），向量化不能复用它——嵌入改为二选一：另配智谱 `embedding-3` 等 OpenAI 兼容嵌入服务（零本机资产），或本地 `BAAI/bge-small-zh-v1.5`（95MB，离线可用）。待抽 `Embedder` 接口后落实
 - 确认卡片 `card_data` 对齐 API 规格第 10 节：`{type, title, data, actions, warning}`
 - `pytest` 默认仅运行非集成用例（`-m "not integration and not e2e and not llm"`），集成用例按需显式选择
