@@ -10,7 +10,6 @@ name = "admin-ai-agent"
 version = "0.1.0"
 description = "企业行政智能系统 - AI 行政数字员工"
 readme = "README.md"
-license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "Admin AI Team"},
@@ -19,7 +18,6 @@ keywords = ["ai", "agent", "enterprise", "admin", "fastapi"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Framework :: FastAPI",

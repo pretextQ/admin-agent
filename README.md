@@ -79,4 +79,4 @@ pnpm dev
 
 测试默认排除集成、端到端与真实模型用例。更多检查见 [测试计划](docs/guides/测试计划.md)。
 
-[贡献指南](CONTRIBUTING.md) · [开发规范](docs/guides/开发规范.md) · [安全策略](SECURITY.md) · [更新日志](CHANGELOG.md) · [MIT 许可证](LICENSE)
+[贡献指南](CONTRIBUTING.md) · [开发规范](docs/guides/开发规范.md) · [安全策略](SECURITY.md) · [更新日志](CHANGELOG.md)
