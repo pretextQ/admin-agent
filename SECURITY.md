@@ -1,8 +1,10 @@
 # 安全策略（SECURITY）
 
+> **实现边界（2026-10-06）**：本文包含安全目标和示例，不代表所有控制已落地。文件服务/病毒扫描、限流、WS 鉴权、CI 扫描、字段加密、审计哈希链/WORM、自动保留期清理尚未完成或未验证。OAuth Redis 故障跳过 state 与审计请求体未脱敏是当前已知缺口。生产可用性以 [当前状态](docs/guides/当前状态.md)、[开发计划](docs/planning/开发计划.md) 和实际验证证据为准。
+
 > 版本：V1.0　|　更新日期：2026-09-15　|　适用软件版本：0.1.0
 >
-> 相关文档：[需求文档](docs/行政智能系统需求文档.md) ｜ [技术方案设计](docs/architecture/行政智能系统-技术方案设计.md) ｜ [API 接口文档](docs/api/api-spec.md) ｜ [部署与运维](docs/guides/部署与运维.md) ｜ [开发规范](docs/guides/开发规范.md)
+> 相关文档：[需求文档](docs/product/需求说明.md) ｜ [技术方案设计](docs/architecture/行政智能系统-技术方案设计.md) ｜ [API 接口文档](docs/api/api-spec.md) ｜ [部署与运维](docs/guides/部署与运维.md) ｜ [开发规范](docs/guides/开发规范.md)
 
 ---
 

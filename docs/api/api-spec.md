@@ -1,10 +1,12 @@
 # API 接口文档
 
-> 版本：V1.3　|　更新日期：2026-09-16　|　软件版本：0.1.0
+> 版本：V1.4　|　更新日期：2026-10-06　|　软件版本：0.1.0
 >
-> 在线文档：http://localhost:8000/docs （Swagger UI）
+> 在线文档：http://localhost:8000/docs （仅 DEBUG=true 时开放 Swagger UI）
 >
 > 设计与实现细节见 [技术方案设计](../architecture/行政智能系统-技术方案设计.md) §8。
+
+> **接口范围**：以 `app/admin_ai/api/` 路由与 Schema 为准。文件接口未实现，WebSocket 为未鉴权回显桩，工具配置更新只回显，部分 metrics 为占位值。以下对应章节是目标契约，不应当作已有能力。当前状态见 [当前状态](../guides/当前状态.md)。
 
 ---
 
@@ -30,11 +32,11 @@
 | 认证 | `/auth/me` | GET | 当前用户信息 |
 | 对话 | `/chat/send` | POST | 发送消息 |
 | 对话 | `/chat/history/{conversation_id}` | GET | 获取会话历史 |
-| 对话 | `/chat/confirm/{task_id}` | POST | 确认 / 取消高风险操作 |
+| 对话 | `/chat/confirm/{conversation_id}` | POST | 确认 / 取消高风险操作 |
 | 对话 | `/chat/transfer/{conversation_id}` | POST | 转人工 |
-| 对话 | `/chat/ws` | WS | WebSocket 实时对话 |
-| 文件 | `/files` | POST | 上传附件 |
-| 文件 | `/files/{file_id}` | GET | 文件元信息 |
+| 对话 | `/chat/ws` | WS | 已注册回显桩，业务/鉴权未实现 |
+| 文件 | `/files` | POST | 规划：上传附件，未实现 |
+| 文件 | `/files/{file_id}` | GET | 规划：文件元信息，未实现 |
 | 任务 | `/tasks/my` | GET | 我的任务列表 |
 | 任务 | `/tasks/pending-approval` | GET | 待我审批的任务 |
 | 任务 | `/tasks/{task_id}` | GET | 任务详情 |
@@ -48,7 +50,7 @@
 | 管理 | `/admin/dashboard` | GET | 仪表盘数据 |
 | 管理 | `/admin/audit-logs` | GET | 审计日志 |
 | 管理 | `/admin/tools` | GET | 工具列表 |
-| 管理 | `/admin/tools/{tool_id}/config` | PUT | 更新工具配置 |
+| 管理 | `/admin/tools/{tool_id}/config` | PUT | 当前只回显，未持久化工具配置 |
 | 管理 | `/admin/metrics` | GET | 系统指标 |
 | 系统 | `/api/health` | GET | 健康检查（不含 `/api/v1` 前缀） |
 
@@ -203,7 +205,7 @@
 |------|------|------|
 | `message` | string | 用户消息，必填 |
 | `conversation_id` | string | 可选，为空则创建新会话 |
-| `attachments` | string[] | 可选，由 `/files` 返回的文件 ID |
+| `attachments` | string[] | 可选，当前直接传附件引用字符串；文件 ID 的安全上传/下载服务尚未实现 |
 
 响应：
 
@@ -252,7 +254,7 @@
 
 ### 4.3 确认高风险操作
 
-**POST** `/chat/confirm/{task_id}`
+**POST** `/chat/confirm/{conversation_id}`
 
 ```json
 {
@@ -263,9 +265,7 @@
 
 `confirmed=false` 表示取消。**注意**：该参数位于请求体中，不是查询参数。
 
-> **实现说明（D-01 待定项）**：当前实现以 `conversation_id` 定位待确认操作
-> （从会话状态恢复槽位，路径为 `/chat/confirm/{conversation_id}`），规格中的
-> `task_id` 为目标形态（落 TaskModel 后切换）。仅会话属主可操作，越权返回 `40003`。
+> **当前契约**：使用 `conversation_id` 从会话状态恢复待确认操作；仅会话属主可操作，越权返回 `40003`。本轮文档对齐已有后端和前端，不改变接口，也不要求迁移到 task_id。
 
 ### 4.4 转人工
 
@@ -291,7 +291,9 @@
 
 ---
 
-## 五、文件接口
+## 五、文件接口（规划，未实现）
+
+> 当前没有 files.py 或注册路由，下列请求/响应是设计示例。现有知识库上传是文本 JSON，不是 PDF/Word 文件上传。
 
 ### 5.1 上传附件
 
@@ -461,8 +463,8 @@
 | `/admin/dashboard` | GET | 今日对话数、任务数、转人工率、热门意图 |
 | `/admin/audit-logs` | GET | 审计日志（按 user_id/action/日期过滤，分页） |
 | `/admin/tools` | GET | 工具列表与启用状态 |
-| `/admin/tools/{tool_id}/config` | PUT | 更新工具配置 |
-| `/admin/metrics` | GET | LLM 调用次数、Token 成本、平均响应时间、完成率、转人工率 |
+| `/admin/tools/{tool_id}/config` | PUT | 当前只回显，未持久化工具配置 |
+| `/admin/metrics` | GET | 完成率/转人工率查库；LLM 次数、成本、平均耗时为占位值 |
 | `/admin/departments` | GET | 部门树（含主管与上游 `external_id`，用于核对组织数据完整性） |
 | `/admin/approval-rules` | GET / POST | 审批路由规则：查询 / 新增或更新（带 `id` 为更新）；校验 `approver_type`、`approval_mode`、金额区间、`step_order` 与 `condition`（按槽位分支的条件，算子 eq/ne/gt/gte/lt/lte/in/not_in） |
 | `/admin/approval-rules/{rule_id}` | DELETE | 删除规则（在途审批不受影响，步骤模式在生成审批链时已快照） |
@@ -477,13 +479,15 @@
 
 ---
 
-## 九、WebSocket 协议
+## 九、WebSocket 协议（规划，当前仅回显）
+
+> 当前端点未鉴权、未连接编排器，仅支持 message 回显和 ping/pong；员工端使用 HTTP。以下鉴权、typing/card/error 事件是目标协议，上线前必须实现或关闭该端点。
 
 ### 9.1 连接
 
 ```text
 GET /api/v1/chat/ws
-Sec-WebSocket-Protocol: bearer,<JWT>
+Sec-WebSocket-Protocol: admin-ai.v1,bearer.<JWT>
 ```
 
 **禁止把 Token 放在 URL 查询串**（会进入网关访问日志）。

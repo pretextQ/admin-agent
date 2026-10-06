@@ -1,5 +1,7 @@
 # Batch 1 核心链路打通 Implementation Plan
 
+> **历史归档（2026-10-06 整理）**：保留原始方案、评审和交接记录供追溯。文中的机器路径、服务运行状态、测试结果、预算与进度只代表记录当时；提交号来自历史重写前，可能无法在当前仓库解析。后续开发请以 [文档导航](../../README.md)、[当前状态](../../guides/当前状态.md) 和 [开发计划](../../planning/开发计划.md) 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让"对话 → 多轮补全 → 规则校验 → 高风险确认 → 工具执行"这条主链路真正可用：接入真实 LLM、持久化会话状态、修复前后端确认与登录链路。

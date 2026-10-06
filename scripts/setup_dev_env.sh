@@ -19,7 +19,7 @@
 #   $REDIS_DIR/redis-server.exe       Redis for Windows
 #
 # 说明：PostgreSQL / Redis 均为绿色版（非 Windows 服务），重启机器后需重新拉起；
-#      本脚本会检测并拉起。详细踩坑见 docs/项目当前状况与交接说明.md §2/§6。
+#      本脚本会检测并拉起。详细踩坑见 docs/guides/开发入门.md。
 
 set -uo pipefail
 
@@ -178,5 +178,5 @@ if [ "$fail" -gt 0 ]; then
     echo " 有未就绪项，按上面 [FAIL] 提示处理后重跑本脚本（幂等）。"
     exit 1
 fi
-echo " 环境就绪。起服务见 docs/项目当前状况与交接说明.md §2。"
+echo " 环境就绪。起服务见 docs/guides/开发入门.md。"
 echo "================================================"

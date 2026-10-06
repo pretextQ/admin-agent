@@ -1,5 +1,7 @@
 # Admin AI 核心模块修复 + 飞书登录 Implementation Plan
 
+> **历史归档（2026-10-06 整理）**：保留原始方案、评审和交接记录供追溯。文中的机器路径、服务运行状态、测试结果、预算与进度只代表记录当时；提交号来自历史重写前，可能无法在当前仓库解析。后续开发请以 [文档导航](../../README.md)、[当前状态](../../guides/当前状态.md) 和 [开发计划](../../planning/开发计划.md) 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复核心链路（chat→orchestrator）、补漏编排器逻辑、首次 Alembic 迁移、审批多级链、知识库诚实化、接入飞书 OAuth 登录、同步文档。

@@ -12,7 +12,7 @@
 | 状态 | Zustand 5 | auth（persist 到 localStorage）/ chat / app 三个 store |
 | HTTP | Axios 1 | 统一信封解包 + Bearer 注入 + 401 处理 |
 | 路由 | React Router 7 | 嵌套路由 + 受保护路由 |
-| 测试 | Vitest 5 + Testing Library | 暂无用例，基建已就位 |
+| 测试 | Vitest 5 + Testing Library | 仅声明依赖，暂无用例和 test 脚本 |
 | Lint | oxlint | `pnpm lint` |
 
 ## 页面结构
